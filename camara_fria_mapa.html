@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Câmara Fria — Planta de Endereçamento · Bread King</title>
+<style>
+  :root{
+    --bg:#0f1c24;
+    --bg-soft:#152631;
+    --panel:#132029;
+    --frost:#8fe3f0;
+    --frost-dim:#4f8b96;
+    --ice-line:#1e3b45;
+    --extra:#e2a33d;
+    --extra-dim:#8a6a2c;
+    --text:#eaf6f8;
+    --text-soft:#9fc2c9;
+    --red:#c23b3b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at 20% -10%, rgba(143,227,240,0.08), transparent 55%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Segoe UI', Arial, sans-serif;
+    min-height:100vh;
+  }
+
+  .topbar{
+    padding:26px 28px 20px;
+    border-bottom:1px solid var(--ice-line);
+    position:relative;
+    overflow:hidden;
+  }
+  .topbar::before{
+    /* textura sutil de "geada" — linhas diagonais finas */
+    content:"";
+    position:absolute; inset:0;
+    background-image:repeating-linear-gradient(115deg, rgba(143,227,240,0.05) 0px, rgba(143,227,240,0.05) 1px, transparent 1px, transparent 14px);
+    pointer-events:none;
+  }
+  .topbar-inner{ position:relative; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; max-width:1400px; margin:0 auto; }
+  .brand-block .eyebrow{ font-size:10.5px; letter-spacing:3px; text-transform:uppercase; color:var(--frost); font-weight:700; margin-bottom:6px; }
+  .brand-block h1{ margin:0; font-size:26px; font-weight:800; letter-spacing:0.2px; }
+  .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:italic; }
+
+  .temp-badge{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
+    padding:10px 18px;
+  }
+  .temp-badge .ico{ font-size:22px; }
+  .temp-badge .val{ font-size:20px; font-weight:800; color:var(--frost); font-family:'Consolas', monospace; }
+  .temp-badge .lbl{ font-size:10px; color:var(--text-soft); text-transform:uppercase; letter-spacing:1px; }
+
+  .container{ max-width:1400px; margin:0 auto; padding:26px 28px 60px; }
+
+  /* Painel elevador: seletor de andar, estilo painel de controle */
+  .layout{ display:flex; gap:24px; align-items:flex-start; }
+  .floor-panel{
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:14px;
+    padding:16px 12px; display:flex; flex-direction:column; gap:8px; align-items:center;
+    position:sticky; top:20px;
+  }
+  .floor-panel .fp-label{ font-size:9.5px; letter-spacing:2px; text-transform:uppercase; color:var(--text-soft); font-weight:700; margin-bottom:4px; text-align:center; }
+  .floor-btn{
+    width:52px; height:52px; border-radius:10px; border:1px solid var(--ice-line);
+    background:var(--bg-soft); color:var(--text-soft); font-size:18px; font-weight:800;
+    cursor:pointer; font-family:'Consolas', monospace; transition:all 0.15s;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .floor-btn:hover{ border-color:var(--frost-dim); color:var(--text); }
+  .floor-btn.active{
+    background:linear-gradient(135deg, rgba(143,227,240,0.22), rgba(143,227,240,0.06));
+    border-color:var(--frost); color:var(--frost);
+    box-shadow:0 0 16px rgba(143,227,240,0.35), inset 0 0 10px rgba(143,227,240,0.15);
+  }
+
+  .content{ flex:1; min-width:0; }
+
+  .kpi-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
+  .kpi-card{ background:var(--panel); border:1px solid var(--ice-line); border-radius:12px; padding:14px 16px; }
+  .kpi-card .lbl{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-soft); font-weight:700; margin-bottom:6px; }
+  .kpi-card .val{ font-size:22px; font-weight:800; color:var(--frost); font-family:'Consolas', monospace; }
+
+  .rua-panel{
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:14px;
+    padding:20px 22px; margin-bottom:18px;
+  }
+  .rua-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .rua-head h2{ margin:0; font-size:15px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text); font-weight:800; }
+  .rua-head .meta{ font-size:11.5px; color:var(--text-soft); }
+
+  .rack-scroll{ overflow-x:auto; padding-bottom:6px; }
+  .lado-label{ font-size:10px; color:var(--frost-dim); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin:4px 0; }
+  .rua-mid-label{
+    font-size:15px; color:var(--frost); text-transform:uppercase; letter-spacing:3px;
+    text-align:center; padding:10px 0; font-weight:800; font-family:'Consolas', monospace;
+    opacity:0.9;
+  }
+
+  .legend{ display:flex; gap:20px; font-size:11.5px; color:var(--text-soft); margin-bottom:16px; flex-wrap:wrap; }
+  .legend span{ display:inline-flex; align-items:center; gap:7px; }
+  .legend .sw{ width:14px; height:14px; border-radius:3px; display:inline-block; }
+
+  .sync-row{ display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
+  .btn-sync{
+    background:var(--panel); border:1px solid var(--frost-dim); color:var(--frost);
+    border-radius:9px; padding:8px 16px; font-size:12.5px; font-weight:700; cursor:pointer;
+    transition:all 0.15s;
+  }
+  .btn-sync:hover{ background:rgba(143,227,240,0.1); }
+  .btn-sync:disabled{ opacity:0.5; cursor:default; }
+  .sync-status{ font-size:11.5px; color:var(--text-soft); }
+
+  .fifo-panel{
+    border-radius:12px; padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6;
+  }
+  .fifo-panel.ok{ background:rgba(80,180,120,0.1); border:1px solid rgba(80,180,120,0.4); color:#a9e8c4; }
+  .fifo-panel.warn{ background:rgba(226,163,61,0.12); border:1px solid var(--extra-dim); color:var(--text); }
+  .fifo-panel .fifo-title{ font-weight:800; text-transform:uppercase; font-size:10.5px; letter-spacing:1.5px; margin-bottom:8px; display:block; }
+  .fifo-panel ul{ margin:0; padding-left:18px; }
+  .fifo-panel li{ margin-bottom:4px; }
+
+  .tip{
+    position:fixed; pointer-events:none; background:#04141a; border:1px solid var(--frost-dim);
+    color:var(--frost); font-family:'Consolas', monospace; font-size:12px; padding:6px 10px;
+    border-radius:6px; opacity:0; transition:opacity 0.1s; z-index:50; white-space:nowrap;
+  }
+
+  footer{ text-align:center; font-size:11px; color:var(--text-soft); padding:20px; }
+
+  @media (max-width:900px){
+    .layout{ flex-direction:column; }
+    .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
+    .kpi-row{ grid-template-columns:repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand-block">
+      <div class="eyebrow">Bread King · Logística</div>
+      <h1>Planta da Câmara Fria</h1>
+      <div class="subtitle">Mapa de endereçamento por rua e andar</div>
+    </div>
+    <div class="temp-badge">
+      <span class="ico">❄️</span>
+      <div>
+        <div class="val">-18°C</div>
+        <div class="lbl">Câmara fria</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="layout">
+
+    <div class="floor-panel" id="floorPanel">
+      <div class="fp-label">Andar</div>
+      <!-- botões gerados via JS, do 4 (topo) ao 1 (base), como um painel de elevador -->
+    </div>
+
+    <div class="content">
+
+      <div class="sync-row">
+        <button id="btnAtualizar" class="btn-sync">↻ Atualizar dados</button>
+        <span id="syncStatus" class="sync-status">Carregando…</span>
+      </div>
+
+      <div id="fifoWarnings"></div>
+
+      <div class="kpi-row" id="kpiRow"></div>
+
+      <div class="legend">
+        <span><i class="sw" style="background:var(--bg-soft);border:1px solid var(--frost-dim);"></i>Posição padrão (livre)</span>
+        <span><i class="sw" style="background:var(--extra);border:1px solid var(--extra-dim);"></i>Posição extra (+2) — só andares 3 e 4</span>
+        <span><i class="sw" style="background:repeating-linear-gradient(45deg,var(--bg-soft),var(--bg-soft) 2px,var(--text-soft) 2px,var(--text-soft) 3px);border:1px solid var(--text-soft);"></i>Sem posição neste andar</span>
+        <span style="opacity:0.85;">Cada posição = 2 paletes lado a lado (P1 / P2) — passe o mouse pra ver cada um</span>
+      </div>
+
+      <div class="legend" id="familyLegend"></div>
+
+      <div id="ruasWrap"></div>
+
+    </div>
+  </div>
+</div>
+
+<footer>Planta de Endereçamento · Câmara Fria · Bread King</footer>
+<div class="tip" id="tip"></div>
+
+<script>
+/* ======================================================================
+   ESTRUTURA DA CÂMARA FRIA
+   - 4 ruas, 4 andares cada
+   - Ruas 1, 2 e 3: dois lados (A e B), cada lado com 20 + 2(extra) + 20 posições
+   - Rua 4: um único lado, também 20 + 2(extra) + 20 posições
+   ====================================================================== */
+const RUAS = [
+  { numero: 1, lados: ['A','B'] },
+  { numero: 2, lados: ['A','B'] },
+  { numero: 3, lados: ['A','B'] },
+  { numero: 4, lados: ['U'] }, // único lado
+];
+const ANDARES = [1,2,3,4];
+const POS_POR_LADO = 42; // 20 + 2 + 20
+const EXTRA_START = 20;  // índice 0-based onde começam as 2 posições extras (posições 21 e 22)
+const EXTRA_COUNT = 2;
+/* Lado da parede onde cada porta fica, em relação ao rack daquela rua:
+   'top' = parede/porta ficam ANTES do primeiro lado (atrás do Lado A, no
+   caso da Rua 1); 'bottom' = ficam DEPOIS do último lado (Rua 4). */
+const PORTA_SIDE = { 1: 'top', 4: 'bottom' };
+
+const PALETES_POR_POSICAO = 2; // cada posição comporta 2 paletes, lado a lado
+
+/* Portas da câmara — são apenas 2 no total, uma em cada ponta: a Porta 01
+   fica do lado da Rua 1, a Porta 02 do lado da Rua 4. Ambas alinhadas com
+   as posições 21 e 22 (a faixa "extra"). */
+const PORTA_POR_RUA = { 1: 'Porta 01', 4: 'Porta 02' };
+
+/* As 2 posições extras (21 e 22) só existem fisicamente como espaço de
+   armazenagem nos andares 3 e 4 — nos andares 1 e 2 esse trecho não é
+   posição utilizável (por isso entra "bloqueado" no desenho), embora a
+   estrutura (e por consequência o alinhamento da porta) seja a mesma em
+   todos os andares. */
+function andarTemExtra(andar){
+  return andar === 3 || andar === 4;
+}
+
+let andarAtual = 4; // andar mais alto como padrão
+
+/* ======================================================================
+   INTEGRAÇÃO COM GOOGLE SHEETS
+   - Aba "Ocupação": FAMÍLIA, RUA, LADO, ANDAR, POSIÇÃO, PALETE, DATA ENTRADA, DATA SAÍDA
+   - Aba "Famílias": FAMILIA, PRODUTO (catálogo de referência)
+   ====================================================================== */
+const CSV_OCUPACAO = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9KBaXZrEc2swQ_EgQ1UyqphOw050KG3Gz3vb6FAZbFNfaV_JTyvAVfuvnXYOCJje13xd78KR4c_uw/pub?gid=0&single=true&output=csv';
+const CSV_FAMILIAS = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT9KBaXZrEc2swQ_EgQ1UyqphOw050KG3Gz3vb6FAZbFNfaV_JTyvAVfuvnXYOCJje13xd78KR4c_uw/pub?gid=864252146&single=true&output=csv';
+
+let OCUPACAO_REGISTROS = [];   // todas as linhas válidas da aba Ocupação
+let OCUPACAO_MAP = {};         // key = código da posição (igual ao cellCode) -> registro ocupado
+let FAMILIAS_CATALOGO = [];    // linhas da aba Famílias
+let ultimaAtualizacao = null;
+
+/* Parser simples de CSV (respeita campos entre aspas com vírgula dentro) */
+function parseCSV(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i=0; i<text.length; i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && next === '\n') i++;
+        row.push(field); field = '';
+        if(row.some(f=>f.trim() !== '')) rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if(field !== '' || row.length){ row.push(field); if(row.some(f=>f.trim()!=='')) rows.push(row); }
+  if(rows.length === 0) return [];
+  const headers = rows[0].map(h=>h.trim().toUpperCase());
+  return rows.slice(1).map(r=>{
+    const obj = {};
+    headers.forEach((h,i)=> obj[h] = (r[i]||'').trim());
+    return obj;
+  });
+}
+
+/* Cor determinística por família, pra não precisar cadastrar cor manualmente */
+function familyColor(nome){
+  let hash = 0;
+  for(let i=0; i<nome.length; i++) hash = nome.charCodeAt(i) + ((hash<<5)-hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 58%, 42%)`;
+}
+
+function normalizeOcupacaoRow(row){
+  const rua = parseInt(row['RUA'], 10);
+  const andar = parseInt(row['ANDAR'], 10);
+  const posicao = parseInt(row['POSIÇÃO'] || row['POSICAO'], 10);
+  let lado = (row['LADO'] || '').trim().toUpperCase();
+  if(rua === 4) lado = 'U';
+  const paleteNum = (row['PALETE'] || '').replace(/[^0-9]/g,'');
+  const familia = (row['FAMÍLIA'] || row['FAMILIA'] || '').trim();
+  const dataEntrada = (row['DATA ENTRADA'] || '').trim();
+  const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
+  if(!rua || !andar || !posicao || !paleteNum || !lado) return null;
+  return { rua, lado, andar, posicao, palete: paleteNum, familia, dataEntrada, dataSaida, ocupado: !dataSaida };
+}
+
+async function carregarDados(){
+  const statusEl = document.getElementById('syncStatus');
+  if(statusEl) statusEl.textContent = 'Atualizando…';
+  try{
+    const [ocupTxt, famTxt] = await Promise.all([
+      fetch(CSV_OCUPACAO).then(r=>r.text()),
+      fetch(CSV_FAMILIAS).then(r=>r.text()),
+    ]);
+    const ocupRows = parseCSV(ocupTxt);
+    FAMILIAS_CATALOGO = parseCSV(famTxt);
+
+    OCUPACAO_REGISTROS = ocupRows.map(normalizeOcupacaoRow).filter(Boolean);
+    OCUPACAO_MAP = {};
+    OCUPACAO_REGISTROS.forEach(r=>{
+      if(!r.ocupado) return;
+      const key = cellCode(r.rua, r.lado, r.andar, r.posicao, r.palete);
+      OCUPACAO_MAP[key] = r;
+    });
+
+    ultimaAtualizacao = new Date();
+    if(statusEl) statusEl.textContent = `Atualizado às ${ultimaAtualizacao.toLocaleTimeString('pt-BR')}`;
+  } catch(err){
+    console.error('Erro ao carregar planilhas:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao buscar dados — tentando de novo em breve';
+  }
+  renderAll();
+}
+
+/* Gera a lista de células (com x, número e se é extra) para um lado de 42 posições.
+   Cada posição comporta 2 paletes lado a lado (P1 e P2) — por isso cada célula
+   é mais larga e é dividida ao meio na horizontal na hora de desenhar. */
+function buildRackCells(){
+  const cellW = 26, cellH = 30, gap = 2, groupGap = 11;
+  const cells = [];
+  let x = 0;
+  for(let i=0; i<POS_POR_LADO; i++){
+    const isExtraStart = i === EXTRA_START;
+    const isExtraEnd = i === EXTRA_START + EXTRA_COUNT;
+    if(isExtraStart || isExtraEnd) x += groupGap - gap;
+    const isExtra = i >= EXTRA_START && i < EXTRA_START + EXTRA_COUNT;
+    cells.push({ x, w: cellW, h: cellH, numero: i+1, isExtra });
+    x += cellW + gap;
+  }
+  return { cells, totalWidth: x - gap };
+}
+
+const RACK = buildRackCells();
+
+function cellCode(rua, lado, andar, numero, palete){
+  const base = `R${rua}-${lado}-A${andar}-${String(numero).padStart(2,'0')}`;
+  return palete ? `${base}-P${palete}` : base;
+}
+
+/* Constrói o SVG de um "lado" (rack). Cada posição normal vira 2 retângulos
+   lado a lado (P1 à esquerda, P2 à direita). As posições 21/22 só viram
+   vagas de verdade nos andares 3 e 4 (ver andarTemExtra) — nos andares 1 e 2
+   aparecem como bloco travado (sem P1/P2, com textura hachurada), já que
+   ali não existe posição de armazenagem. */
+function renderRackSvg(rua, lado, andar){
+  const h = RACK.cells[0].h;
+  const extraAtivo = andarTemExtra(andar);
+  let rects = '';
+  RACK.cells.forEach(c=>{
+    const codeOuter = cellCode(rua, lado, andar, c.numero);
+
+    if(c.isExtra && !extraAtivo){
+      // bloqueado: não existe posição de armazenagem neste andar
+      rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
+                  fill="url(#hatch)" stroke="var(--text-soft)" stroke-width="1"
+                  data-code="${codeOuter} · sem posição neste andar" class="rack-cell"
+                  style="cursor:default;opacity:0.5;"></rect>`;
+      return;
+    }
+
+    const fill = c.isExtra ? 'var(--extra)' : 'var(--bg-soft)';
+    const stroke = c.isExtra ? 'var(--extra-dim)' : 'var(--frost-dim)';
+    const codeP1 = cellCode(rua, lado, andar, c.numero, 1);
+    const codeP2 = cellCode(rua, lado, andar, c.numero, 2);
+    const ocupP1 = OCUPACAO_MAP[codeP1];
+    const ocupP2 = OCUPACAO_MAP[codeP2];
+    const fillP1 = ocupP1 ? familyColor(ocupP1.familia) : fill;
+    const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
+    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'} · desde ${ocupP1.dataEntrada || '?'}` : codeP1;
+    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'} · desde ${ocupP2.dataEntrada || '?'}` : codeP2;
+    const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
+    // contorno externo da posição (agrupa os 2 paletes)
+    rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
+                fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter}"></rect>`;
+    // P1 — palete da esquerda
+    rects += `<rect x="${c.x+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
+                fill="${fillP1}" stroke="${stroke}" stroke-width="0.6"
+                class="rack-cell" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
+    // P2 — palete da direita
+    rects += `<rect x="${c.x+halfW+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
+                fill="${fillP2}" stroke="${stroke}" stroke-width="0.6" opacity="0.72"
+                class="rack-cell" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
+  });
+  const hatchDef = `<defs><pattern id="hatch" width="5" height="5" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+    <rect width="5" height="5" fill="var(--bg-soft)"></rect>
+    <line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-soft)" stroke-width="1.4"></line>
+  </pattern></defs>`;
+  return `<svg width="${RACK.totalWidth}" height="${h}" style="display:block;">${hatchDef}${rects}</svg>`;
+}
+
+/* Porta desenhada no mesmo estilo da planta baixa: um trecho de parede com
+   um vão + o arco de abertura, alinhado ao centro das posições 21/22.
+   side='top'    -> parede fica ACIMA do rack (a porta "fecha" o lado de trás
+                     do Lado A) — usada na Rua 1.
+   side='bottom' -> parede fica ABAIXO do rack — usada na Rua 4. */
+function doorWallHtml(portaLabel, side){
+  const first = RACK.cells[EXTRA_START];
+  const last = RACK.cells[EXTRA_START + EXTRA_COUNT - 1];
+  const centerX = (first.x + last.x + last.w) / 2;
+  const doorW = 40, wallColor = '#5c828c', h = 66;
+  const isTop = side === 'top';
+  const wallY = isTop ? h - 12 : 12;
+  const leafEndY = isTop ? wallY - doorW : wallY + doorW;
+  const sweep = isTop ? 0 : 1;
+  const labelY = isTop ? leafEndY - 10 : leafEndY + 18;
+  return `
+    <svg width="${RACK.totalWidth}" height="${h}" style="display:block;overflow:visible;">
+      <line x1="0" y1="${wallY}" x2="${centerX-doorW/2}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
+      <line x1="${centerX+doorW/2}" y1="${wallY}" x2="${RACK.totalWidth}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
+      <line x1="${centerX-doorW/2}" y1="${wallY}" x2="${centerX-doorW/2}" y2="${leafEndY}" stroke="${wallColor}" stroke-width="2"></line>
+      <path d="M ${centerX-doorW/2} ${leafEndY} A ${doorW} ${doorW} 0 0 ${sweep} ${centerX+doorW/2} ${wallY}" fill="none" stroke="${wallColor}" stroke-width="1" stroke-dasharray="3,3" opacity="0.65"></path>
+      <text x="${centerX}" y="${labelY}" font-size="11" fill="var(--extra)" font-weight="800" text-anchor="middle" letter-spacing="0.5">${portaLabel}</text>
+    </svg>
+  `;
+}
+
+function renderRua(rua){
+  const isDouble = rua.lados.length === 2;
+  const extraAtivo = andarTemExtra(andarAtual);
+  const posPorLadoNesteAndar = extraAtivo ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
+  const capacidade = rua.lados.length * posPorLadoNesteAndar;
+  const portaLabel = PORTA_POR_RUA[rua.numero];
+  const portaSide = PORTA_SIDE[rua.numero];
+  const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide) : '';
+
+  let body = '';
+  if(isDouble){
+    body = `
+      ${portaSide === 'top' ? portaHtml : ''}
+      <div class="lado-label">Lado A</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'A', andarAtual)}</div>
+      <div class="rua-mid-label">Rua ${rua.numero}</div>
+      <div class="lado-label">Lado B</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'B', andarAtual)}</div>
+      ${portaSide === 'bottom' ? portaHtml : ''}
+    `;
+  } else {
+    body = `
+      ${portaSide === 'top' ? portaHtml : ''}
+      <div class="rua-mid-label">Rua ${rua.numero}</div>
+      <div class="lado-label">Lado único</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'U', andarAtual)}</div>
+      ${portaSide === 'bottom' ? portaHtml : ''}
+    `;
+  }
+
+  return `
+    <div class="rua-panel">
+      <div class="rua-head">
+        <span class="meta">${capacidade} posições (${capacidade*PALETES_POR_POSICAO} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · 20 ${extraAtivo ? '+ 2 (extra) ' : ''}+ 20 ${isDouble ? 'por lado' : ''}${!extraAtivo ? ' · sem as 2 extras neste andar' : ''}</span>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
+function posicoesPorAndar(andar){
+  const posPorLado = andarTemExtra(andar) ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
+  return RUAS.reduce((sum,r)=> sum + r.lados.length*posPorLado, 0);
+}
+
+/* Conta quantos paletes (P1+P2) estão ocupados numa rua/lado/andar específicos */
+function paletesOcupados(rua, lado, andar){
+  let count = 0;
+  RACK.cells.forEach(c=>{
+    if(c.isExtra && !andarTemExtra(andar)) return; // não existe posição aqui
+    [1,2].forEach(p=>{
+      if(OCUPACAO_MAP[cellCode(rua, lado, andar, c.numero, p)]) count++;
+    });
+  });
+  return count;
+}
+
+function paletesTotaisNoAndar(andar){
+  const posPorLado = andarTemExtra(andar) ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
+  return posPorLado * PALETES_POR_POSICAO;
+}
+
+/* Regra de FIFO: dentro de cada rua/lado, o andar 1 deve ser preenchido
+   antes do 2, o 2 antes do 3, e assim por diante. Uma violação acontece
+   quando um andar tem paletes ocupados enquanto um andar ABAIXO dele
+   (na mesma rua/lado) ainda tem posições livres. */
+function calcularViolacoesFifo(){
+  const violacoes = [];
+  RUAS.forEach(rua=>{
+    rua.lados.forEach(lado=>{
+      let menorAndarComVaga = null;
+      for(const andar of ANDARES){
+        const ocupados = paletesOcupados(rua.numero, lado, andar);
+        const total = paletesTotaisNoAndar(andar);
+        if(ocupados < total && menorAndarComVaga === null){
+          menorAndarComVaga = andar;
+        }
+      }
+      if(menorAndarComVaga === null) return; // câmara cheia nessa rua/lado, nada a avisar
+      ANDARES.filter(a=>a > menorAndarComVaga).forEach(andar=>{
+        const ocupados = paletesOcupados(rua.numero, lado, andar);
+        if(ocupados > 0){
+          const ladoTxt = lado === 'U' ? '' : ` · Lado ${lado}`;
+          violacoes.push(`Rua ${rua.numero}${ladoTxt}: há paletes no andar ${andar}, mas o andar ${menorAndarComVaga} ainda tem posições livres.`);
+        }
+      });
+    });
+  });
+  return violacoes;
+}
+
+function renderFifoWarnings(){
+  const el = document.getElementById('fifoWarnings');
+  if(OCUPACAO_REGISTROS.length === 0){
+    el.innerHTML = '';
+    return;
+  }
+  const violacoes = calcularViolacoesFifo();
+  if(violacoes.length === 0){
+    el.innerHTML = `<div class="fifo-panel ok"><span class="fifo-title">✓ FIFO em dia</span>Nenhum andar de cima está sendo usado com espaço livre embaixo.</div>`;
+  } else {
+    el.innerHTML = `<div class="fifo-panel warn"><span class="fifo-title">⚠ ${violacoes.length} aviso(s) de FIFO</span>
+      <ul>${violacoes.map(v=>`<li>${v}</li>`).join('')}</ul></div>`;
+  }
+}
+
+function renderFamilyLegend(){
+  const el = document.getElementById('familyLegend');
+  const familias = [...new Set(OCUPACAO_REGISTROS.filter(r=>r.ocupado && r.familia).map(r=>r.familia))].sort();
+  if(familias.length === 0){ el.innerHTML = ''; return; }
+  el.innerHTML = familias.map(f=>
+    `<span><i class="sw" style="background:${familyColor(f)};border:1px solid rgba(255,255,255,0.25);"></i>${f}</span>`
+  ).join('');
+}
+
+function renderKPIs(){
+  const capNesteAndar = posicoesPorAndar(andarAtual);
+  const capTotalPosicoes = ANDARES.reduce((sum,a)=> sum + posicoesPorAndar(a), 0);
+  const capTotalPaletes = capTotalPosicoes * PALETES_POR_POSICAO;
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi-card"><div class="lbl">Ruas</div><div class="val">${RUAS.length}</div></div>
+    <div class="kpi-card"><div class="lbl">Posições no andar ${andarAtual}</div><div class="val">${capNesteAndar}</div></div>
+    <div class="kpi-card"><div class="lbl">Posições — câmara toda</div><div class="val">${capTotalPosicoes.toLocaleString('pt-BR')}</div></div>
+    <div class="kpi-card"><div class="lbl">Capacidade em paletes (×2)</div><div class="val">${capTotalPaletes.toLocaleString('pt-BR')}</div></div>
+  `;
+}
+
+function renderFloorPanel(){
+  const panel = document.getElementById('floorPanel');
+  panel.querySelectorAll('.floor-btn').forEach(b=>b.remove());
+  ANDARES.slice().reverse().forEach(a=>{
+    const btn = document.createElement('button');
+    btn.className = 'floor-btn' + (a === andarAtual ? ' active' : '');
+    btn.textContent = a;
+    btn.title = `Andar ${a}`;
+    btn.addEventListener('click', ()=>{
+      if(a === andarAtual) return;
+      andarAtual = a;
+      renderFloorPanel();
+      renderAll();
+    });
+    panel.appendChild(btn);
+  });
+}
+
+function renderAll(){
+  renderKPIs();
+  renderFifoWarnings();
+  renderFamilyLegend();
+  document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
+  attachTooltips();
+}
+
+function attachTooltips(){
+  const tip = document.getElementById('tip');
+  document.querySelectorAll('.rack-cell').forEach(cell=>{
+    cell.addEventListener('mousemove', (e)=>{
+      tip.textContent = cell.getAttribute('data-code');
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+      tip.style.opacity = '1';
+    });
+    cell.addEventListener('mouseleave', ()=>{ tip.style.opacity = '0'; });
+  });
+}
+
+document.getElementById('btnAtualizar').addEventListener('click', ()=>{
+  const btn = document.getElementById('btnAtualizar');
+  btn.disabled = true;
+  carregarDados().finally(()=>{ btn.disabled = false; });
+});
+
+renderFloorPanel();
+renderAll();
+carregarDados();
+// Atualiza sozinho a cada 2 minutos, pra equipe não precisar clicar toda hora
+setInterval(carregarDados, 120000);
+</script>
+</body>
+</html>
