@@ -124,6 +124,24 @@
   .fifo-panel ul{ margin:0; padding-left:18px; }
   .fifo-panel li{ margin-bottom:4px; }
 
+  .saida-panel{
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
+    padding:16px 20px; margin-bottom:18px;
+  }
+  .saida-panel .saida-title{
+    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--frost); margin-bottom:12px; display:flex; align-items:center; gap:8px;
+  }
+  .saida-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:10px; }
+  .saida-card{
+    background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:10px; padding:12px 14px;
+  }
+  .saida-card .familia{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
+  .saida-card .item{ display:flex; justify-content:space-between; align-items:baseline; font-size:12px; padding:3px 0; border-top:1px dashed var(--ice-line); }
+  .saida-card .item:first-of-type{ border-top:none; }
+  .saida-card .item .pos{ font-family:'Consolas', monospace; color:var(--text); }
+  .saida-card .item .dias{ color:var(--extra); font-weight:700; white-space:nowrap; margin-left:8px; }
+
   .tip{
     position:fixed; pointer-events:none; background:#04141a; border:1px solid var(--frost-dim);
     color:var(--frost); font-family:'Consolas', monospace; font-size:12px; padding:6px 10px;
@@ -172,6 +190,8 @@
         <button id="btnAtualizar" class="btn-sync">↻ Atualizar dados</button>
         <span id="syncStatus" class="sync-status">Carregando…</span>
       </div>
+
+      <div id="proximosASair"></div>
 
       <div id="fifoWarnings"></div>
 
@@ -497,6 +517,74 @@ function paletesTotaisNoAndar(andar){
    antes do 2, o 2 antes do 3, e assim por diante. Uma violação acontece
    quando um andar tem paletes ocupados enquanto um andar ABAIXO dele
    (na mesma rua/lado) ainda tem posições livres. */
+/* Converte "dd/mm/aaaa" em Date pra dar pra ordenar/comparar. Retorna null
+   se a data estiver vazia ou mal formatada (linha some da lista, não quebra
+   o resto). */
+function parseDateBR(str){
+  if(!str) return null;
+  const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(!m) return null;
+  const [, d, mo, y] = m;
+  const yyyy = y.length === 2 ? `20${y}` : y;
+  const dt = new Date(Number(yyyy), Number(mo)-1, Number(d));
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+function diasEmEstoque(dataEntrada){
+  const dt = parseDateBR(dataEntrada);
+  if(!dt) return null;
+  const ms = Date.now() - dt.getTime();
+  return Math.max(0, Math.floor(ms / (1000*60*60*24)));
+}
+
+/* Pra cada família com paletes ocupados, pega os mais antigos (menor data de
+   entrada primeiro) — é essa lista que responde "o que eu preciso tirar
+   primeiro?" na prática, sem precisar entender a regra de andares. */
+function calcularProximosASair(porFamiliaLimite){
+  const porFamilia = {};
+  OCUPACAO_REGISTROS.forEach(r=>{
+    if(!r.ocupado || !r.familia) return;
+    const dias = diasEmEstoque(r.dataEntrada);
+    if(dias === null) return; // sem data válida, não dá pra priorizar
+    (porFamilia[r.familia] = porFamilia[r.familia] || []).push({...r, dias});
+  });
+  Object.keys(porFamilia).forEach(f=>{
+    porFamilia[f].sort((a,b)=> b.dias - a.dias); // mais dias parado primeiro
+    porFamilia[f] = porFamilia[f].slice(0, porFamiliaLimite);
+  });
+  return porFamilia;
+}
+
+function renderProximosASair(){
+  const el = document.getElementById('proximosASair');
+  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
+
+  const porFamilia = calcularProximosASair(3);
+  const familias = Object.keys(porFamilia).sort();
+  if(familias.length === 0){ el.innerHTML = ''; return; }
+
+  const cards = familias.map(f=>{
+    const itens = porFamilia[f].map(r=>{
+      const ladoTxt = r.lado === 'U' ? '' : `${r.lado} · `;
+      return `<div class="item">
+        <span class="pos">Rua ${r.rua} · ${ladoTxt}And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</span>
+        <span class="dias">${r.dias}d</span>
+      </div>`;
+    }).join('');
+    return `<div class="saida-card">
+      <div class="familia" style="color:${familyColor(f)}">${f}</div>
+      ${itens}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="saida-panel">
+      <span class="saida-title">🔻 Retirar primeiro (mais antigos por família)</span>
+      <div class="saida-grid">${cards}</div>
+    </div>
+  `;
+}
+
 function calcularViolacoesFifo(){
   const violacoes = [];
   RUAS.forEach(rua=>{
@@ -578,6 +666,7 @@ function renderFloorPanel(){
 
 function renderAll(){
   renderKPIs();
+  renderProximosASair();
   renderFifoWarnings();
   renderFamilyLegend();
   document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
