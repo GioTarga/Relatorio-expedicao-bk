@@ -115,14 +115,16 @@
   .btn-sync:disabled{ opacity:0.5; cursor:default; }
   .sync-status{ font-size:11.5px; color:var(--text-soft); }
 
-  .fifo-panel{
-    border-radius:12px; padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6;
+  .aloc-card{
+    background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:10px; padding:12px 14px;
   }
-  .fifo-panel.ok{ background:rgba(80,180,120,0.1); border:1px solid rgba(80,180,120,0.4); color:#a9e8c4; }
-  .fifo-panel.warn{ background:rgba(226,163,61,0.12); border:1px solid var(--extra-dim); color:var(--text); }
-  .fifo-panel .fifo-title{ font-weight:800; text-transform:uppercase; font-size:10.5px; letter-spacing:1.5px; margin-bottom:8px; display:block; }
-  .fifo-panel ul{ margin:0; padding-left:18px; }
-  .fifo-panel li{ margin-bottom:4px; }
+  .aloc-card .familia{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
+  .aloc-card .aloc-rua{ font-size:12px; color:var(--text-soft); margin-bottom:8px; }
+  .aloc-card .aloc-destino{ font-size:12.5px; color:var(--text); line-height:1.5; }
+  .aloc-card .aloc-destino strong{ color:var(--frost); }
+  .aloc-card .aloc-sub{ font-size:11px; color:var(--text-soft); margin-top:4px; }
+  .aloc-card.cheio{ border-color:var(--red); background:rgba(194,59,59,0.08); }
+  .aloc-card.cheio .aloc-destino{ color:#e88b8b; }
 
   .saida-panel{
     background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
@@ -141,6 +143,24 @@
   .saida-card .item:first-of-type{ border-top:none; }
   .saida-card .item .pos{ font-family:'Consolas', monospace; color:var(--text); }
   .saida-card .item .dias{ color:var(--extra); font-weight:700; white-space:nowrap; margin-left:8px; }
+
+  .conflito-panel{
+    background:rgba(194,59,59,0.12); border:1px solid var(--red); border-radius:12px;
+    padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6; color:var(--text);
+  }
+  .conflito-panel .conflito-title{
+    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--red); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+  }
+  .conflito-panel ul{ margin:0; padding-left:18px; }
+  .conflito-panel li{ margin-bottom:6px; }
+  .conflito-panel .sub{ display:block; font-size:11px; color:var(--text-soft); margin-top:2px; margin-left:2px; }
+
+  .conflito-pulse{ animation: conflitoPulse 1.1s ease-in-out infinite; }
+  @keyframes conflitoPulse{
+    0%, 100% { stroke-opacity: 1; }
+    50% { stroke-opacity: 0.25; }
+  }
 
   .tip{
     position:fixed; pointer-events:none; background:#04141a; border:1px solid var(--frost-dim);
@@ -190,6 +210,8 @@
         <button id="btnAtualizar" class="btn-sync">↻ Atualizar dados</button>
         <span id="syncStatus" class="sync-status">Carregando…</span>
       </div>
+
+      <div id="conflitosAlerta"></div>
 
       <div id="proximosASair"></div>
 
@@ -321,6 +343,9 @@ function normalizeOcupacaoRow(row){
   return { rua, lado, andar, posicao, palete: paleteNum, familia, dataEntrada, dataSaida, ocupado: !dataSaida };
 }
 
+let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
+let OCUPACAO_CONFLITOS_SET = new Set(); // mesma info, em Set, pra lookup rápido no desenho
+
 async function carregarDados(){
   const statusEl = document.getElementById('syncStatus');
   if(statusEl) statusEl.textContent = 'Atualizando…';
@@ -333,11 +358,26 @@ async function carregarDados(){
     FAMILIAS_CATALOGO = parseCSV(famTxt);
 
     OCUPACAO_REGISTROS = ocupRows.map(normalizeOcupacaoRow).filter(Boolean);
-    OCUPACAO_MAP = {};
+
+    // agrupa por posição+palete pra achar onde há mais de 1 registro "aberto"
+    // (sem data de saída) ao mesmo tempo — isso é sempre um erro de
+    // apontamento, já que fisicamente só cabe 1 produto por vaga de palete
+    const porChave = {};
     OCUPACAO_REGISTROS.forEach(r=>{
       if(!r.ocupado) return;
       const key = cellCode(r.rua, r.lado, r.andar, r.posicao, r.palete);
-      OCUPACAO_MAP[key] = r;
+      (porChave[key] = porChave[key] || []).push(r);
+    });
+
+    OCUPACAO_MAP = {};
+    OCUPACAO_CONFLITOS = [];
+    OCUPACAO_CONFLITOS_SET = new Set();
+    Object.entries(porChave).forEach(([key, regs])=>{
+      OCUPACAO_MAP[key] = regs[regs.length-1]; // usa o mais recente pra colorir/mostrar
+      if(regs.length > 1){
+        OCUPACAO_CONFLITOS.push({ key, registros: regs });
+        OCUPACAO_CONFLITOS_SET.add(key);
+      }
     });
 
     ultimaAtualizacao = new Date();
@@ -403,20 +443,22 @@ function renderRackSvg(rua, lado, andar){
     const ocupP2 = OCUPACAO_MAP[codeP2];
     const fillP1 = ocupP1 ? familyColor(ocupP1.familia) : fill;
     const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
-    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'} · desde ${ocupP1.dataEntrada || '?'}` : codeP1;
-    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'} · desde ${ocupP2.dataEntrada || '?'}` : codeP2;
+    const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
+    const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
+    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'} · desde ${ocupP1.dataEntrada || '?'}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
+    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'} · desde ${ocupP2.dataEntrada || '?'}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
     const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
     // contorno externo da posição (agrupa os 2 paletes)
     rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
                 fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter}"></rect>`;
     // P1 — palete da esquerda
     rects += `<rect x="${c.x+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
-                fill="${fillP1}" stroke="${stroke}" stroke-width="0.6"
-                class="rack-cell" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
+                fill="${fillP1}" stroke="${conflitoP1 ? 'var(--red)' : stroke}" stroke-width="${conflitoP1 ? '2' : '0.6'}"
+                class="rack-cell${conflitoP1 ? ' conflito-pulse' : ''}" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
     // P2 — palete da direita
     rects += `<rect x="${c.x+halfW+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
-                fill="${fillP2}" stroke="${stroke}" stroke-width="0.6" opacity="0.72"
-                class="rack-cell" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
+                fill="${fillP2}" stroke="${conflitoP2 ? 'var(--red)' : stroke}" stroke-width="${conflitoP2 ? '2' : '0.6'}" opacity="0.72"
+                class="rack-cell${conflitoP2 ? ' conflito-pulse' : ''}" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
   });
   const hatchDef = `<defs><pattern id="hatch" width="5" height="5" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
     <rect width="5" height="5" fill="var(--bg-soft)"></rect>
@@ -555,6 +597,25 @@ function calcularProximosASair(porFamiliaLimite){
   return porFamilia;
 }
 
+function renderConflitos(){
+  const el = document.getElementById('conflitosAlerta');
+  if(OCUPACAO_CONFLITOS.length === 0){ el.innerHTML = ''; return; }
+
+  const itens = OCUPACAO_CONFLITOS.map(c=>{
+    const regsHtml = c.registros.map(r=>
+      `<span class="sub">→ ${r.familia || 'sem família'} · entrada ${r.dataEntrada || '?'}</span>`
+    ).join('');
+    return `<li><strong>${c.key}</strong> tem ${c.registros.length} lançamentos em aberto ao mesmo tempo — vá até a câmara conferir o que está de fato nessa vaga.${regsHtml}</li>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="conflito-panel">
+      <span class="conflito-title">🚨 ${OCUPACAO_CONFLITOS.length} posição(ões) com registro duplicado</span>
+      <ul>${itens}</ul>
+    </div>
+  `;
+}
+
 function renderProximosASair(){
   const el = document.getElementById('proximosASair');
   if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
@@ -585,44 +646,87 @@ function renderProximosASair(){
   `;
 }
 
-function calcularViolacoesFifo(){
-  const violacoes = [];
+/* Acha a primeira vaga livre (posição + palete) dentro de um andar,
+   respeitando as posições extras bloqueadas nos andares 1/2. */
+function encontrarPrimeiraVagaLivre(rua, lado, andar){
+  for(const c of RACK.cells){
+    if(c.isExtra && !andarTemExtra(andar)) continue;
+    for(const p of [1,2]){
+      const key = cellCode(rua, lado, andar, c.numero, p);
+      if(!OCUPACAO_MAP[key]) return { posicao: c.numero, palete: p };
+    }
+  }
+  return null;
+}
+
+/* Pra cada rua/lado, calcula em qual andar o PRÓXIMO palete deve entrar,
+   seguindo a regra "de baixo pra cima" — é o menor andar que ainda tem vaga.
+   Também identifica a família que já ocupa aquela rua/lado hoje (pela
+   maioria dos registros), pra deixar claro no card pra quem é aquele
+   espaço. */
+function calcularAlocacaoSugerida(){
+  const sugestoes = [];
   RUAS.forEach(rua=>{
     rua.lados.forEach(lado=>{
-      let menorAndarComVaga = null;
+      let andarAlvo = null;
       for(const andar of ANDARES){
         const ocupados = paletesOcupados(rua.numero, lado, andar);
         const total = paletesTotaisNoAndar(andar);
-        if(ocupados < total && menorAndarComVaga === null){
-          menorAndarComVaga = andar;
-        }
+        if(ocupados < total){ andarAlvo = andar; break; }
       }
-      if(menorAndarComVaga === null) return; // câmara cheia nessa rua/lado, nada a avisar
-      ANDARES.filter(a=>a > menorAndarComVaga).forEach(andar=>{
-        const ocupados = paletesOcupados(rua.numero, lado, andar);
-        if(ocupados > 0){
-          const ladoTxt = lado === 'U' ? '' : ` · Lado ${lado}`;
-          violacoes.push(`Rua ${rua.numero}${ladoTxt}: há paletes no andar ${andar}, mas o andar ${menorAndarComVaga} ainda tem posições livres.`);
-        }
+
+      const regsRuaLado = OCUPACAO_REGISTROS.filter(r=> r.ocupado && r.rua===rua.numero && r.lado===lado);
+      const contagem = {};
+      regsRuaLado.forEach(r=>{ if(r.familia) contagem[r.familia] = (contagem[r.familia]||0)+1; });
+      const familiaTop = Object.keys(contagem).sort((a,b)=>contagem[b]-contagem[a])[0] || null;
+
+      if(andarAlvo === null){
+        sugestoes.push({ rua: rua.numero, lado, cheio: true, familia: familiaTop });
+        return;
+      }
+      const total = paletesTotaisNoAndar(andarAlvo);
+      const ocupados = paletesOcupados(rua.numero, lado, andarAlvo);
+      const vaga = encontrarPrimeiraVagaLivre(rua.numero, lado, andarAlvo);
+      sugestoes.push({
+        rua: rua.numero, lado, andar: andarAlvo,
+        livres: total - ocupados, vaga, familia: familiaTop, cheio: false
       });
     });
   });
-  return violacoes;
+  return sugestoes;
 }
 
-function renderFifoWarnings(){
+function renderAlocacaoSugerida(){
   const el = document.getElementById('fifoWarnings');
-  if(OCUPACAO_REGISTROS.length === 0){
-    el.innerHTML = '';
-    return;
-  }
-  const violacoes = calcularViolacoesFifo();
-  if(violacoes.length === 0){
-    el.innerHTML = `<div class="fifo-panel ok"><span class="fifo-title">✓ FIFO em dia</span>Nenhum andar de cima está sendo usado com espaço livre embaixo.</div>`;
-  } else {
-    el.innerHTML = `<div class="fifo-panel warn"><span class="fifo-title">⚠ ${violacoes.length} aviso(s) de FIFO</span>
-      <ul>${violacoes.map(v=>`<li>${v}</li>`).join('')}</ul></div>`;
-  }
+  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
+
+  const sugestoes = calcularAlocacaoSugerida();
+  const cards = sugestoes.map(s=>{
+    const ladoTxt = s.lado === 'U' ? '' : ` · Lado ${s.lado}`;
+    const familiaTxt = s.familia ? s.familia : 'sem família atribuída ainda';
+    const familiaCor = s.familia ? familyColor(s.familia) : 'var(--text-soft)';
+    if(s.cheio){
+      return `<div class="aloc-card cheio">
+        <div class="familia" style="color:${familiaCor}">${familiaTxt}</div>
+        <div class="aloc-rua">Rua ${s.rua}${ladoTxt}</div>
+        <div class="aloc-destino">🚫 Câmara cheia nessa rua — sem vaga disponível</div>
+      </div>`;
+    }
+    const vagaTxt = s.vaga ? `Pos.${String(s.vaga.posicao).padStart(2,'0')}-P${s.vaga.palete}` : '—';
+    return `<div class="aloc-card">
+      <div class="familia" style="color:${familiaCor}">${familiaTxt}</div>
+      <div class="aloc-rua">Rua ${s.rua}${ladoTxt}</div>
+      <div class="aloc-destino">📥 Guardar no <strong>Andar ${s.andar}</strong> · sugestão: ${vagaTxt}</div>
+      <div class="aloc-sub">${s.livres} vaga(s) livre(s) nesse andar</div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="saida-panel">
+      <span class="saida-title">📥 Onde guardar o próximo palete (seguindo o FIFO)</span>
+      <div class="saida-grid">${cards}</div>
+    </div>
+  `;
 }
 
 function renderFamilyLegend(){
@@ -666,8 +770,9 @@ function renderFloorPanel(){
 
 function renderAll(){
   renderKPIs();
+  renderConflitos();
   renderProximosASair();
-  renderFifoWarnings();
+  renderAlocacaoSugerida();
   renderFamilyLegend();
   document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
   attachTooltips();
