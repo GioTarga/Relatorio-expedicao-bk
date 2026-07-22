@@ -139,10 +139,12 @@
     background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:10px; padding:12px 14px;
   }
   .saida-card .familia{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
-  .saida-card .item{ display:flex; justify-content:space-between; align-items:baseline; font-size:12px; padding:3px 0; border-top:1px dashed var(--ice-line); }
-  .saida-card .item:first-of-type{ border-top:none; }
+  .saida-card .item-wrap{ padding:4px 0; border-top:1px dashed var(--ice-line); }
+  .saida-card .item-wrap:first-of-type{ border-top:none; }
+  .saida-card .item{ display:flex; justify-content:space-between; align-items:baseline; font-size:12px; }
   .saida-card .item .pos{ font-family:'Consolas', monospace; color:var(--text); }
   .saida-card .item .dias{ color:var(--extra); font-weight:700; white-space:nowrap; margin-left:8px; }
+  .saida-card .item-produto{ font-size:11px; color:var(--text-soft); margin-top:1px; }
 
   .conflito-panel{
     background:rgba(194,59,59,0.12); border:1px solid var(--red); border-radius:12px;
@@ -337,10 +339,11 @@ function normalizeOcupacaoRow(row){
   if(rua === 4) lado = 'U';
   const paleteNum = (row['PALETE'] || '').replace(/[^0-9]/g,'');
   const familia = (row['FAMÍLIA'] || row['FAMILIA'] || '').trim();
+  const produto = (row['PRODUTO'] || '').trim();
   const dataEntrada = (row['DATA ENTRADA'] || '').trim();
   const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
   if(!rua || !andar || !posicao || !paleteNum || !lado) return null;
-  return { rua, lado, andar, posicao, palete: paleteNum, familia, dataEntrada, dataSaida, ocupado: !dataSaida };
+  return { rua, lado, andar, posicao, palete: paleteNum, familia, produto, dataEntrada, dataSaida, ocupado: !dataSaida };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -445,8 +448,8 @@ function renderRackSvg(rua, lado, andar){
     const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
     const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
     const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
-    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'} · desde ${ocupP1.dataEntrada || '?'}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
-    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'} · desde ${ocupP2.dataEntrada || '?'}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
+    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'}${ocupP1.produto ? ' · ' + ocupP1.produto : ''} · desde ${ocupP1.dataEntrada || '?'}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
+    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'}${ocupP2.produto ? ' · ' + ocupP2.produto : ''} · desde ${ocupP2.dataEntrada || '?'}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
     const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
     // contorno externo da posição (agrupa os 2 paletes)
     rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
@@ -603,7 +606,7 @@ function renderConflitos(){
 
   const itens = OCUPACAO_CONFLITOS.map(c=>{
     const regsHtml = c.registros.map(r=>
-      `<span class="sub">→ ${r.familia || 'sem família'} · entrada ${r.dataEntrada || '?'}</span>`
+      `<span class="sub">→ ${r.familia || 'sem família'}${r.produto ? ' · ' + r.produto : ''} · entrada ${r.dataEntrada || '?'}</span>`
     ).join('');
     return `<li><strong>${c.key}</strong> tem ${c.registros.length} lançamentos em aberto ao mesmo tempo — vá até a câmara conferir o que está de fato nessa vaga.${regsHtml}</li>`;
   }).join('');
@@ -627,9 +630,12 @@ function renderProximosASair(){
   const cards = familias.map(f=>{
     const itens = porFamilia[f].map(r=>{
       const ladoTxt = r.lado === 'U' ? '' : `${r.lado} · `;
-      return `<div class="item">
-        <span class="pos">Rua ${r.rua} · ${ladoTxt}And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</span>
-        <span class="dias">${r.dias}d</span>
+      return `<div class="item-wrap">
+        <div class="item">
+          <span class="pos">Rua ${r.rua} · ${ladoTxt}And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</span>
+          <span class="dias">${r.dias}d</span>
+        </div>
+        ${r.produto ? `<div class="item-produto">${r.produto}</div>` : ''}
       </div>`;
     }).join('');
     return `<div class="saida-card">
