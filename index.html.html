@@ -327,6 +327,30 @@
     border:1px solid var(--extra-dim); border-radius:8px; padding:10px 12px;
   }
 
+  .entrada-selecionado-vazio{ font-size:12.5px; color:var(--text-soft); padding:10px 0; }
+  .entrada-label{
+    display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:1px;
+    color:var(--text-soft); font-weight:700; margin:14px 0 6px;
+  }
+  .entrada-label:first-of-type{ margin-top:4px; }
+  .entrada-select{
+    width:100%; background:var(--bg-soft); border:1px solid var(--ice-line); color:var(--text);
+    border-radius:8px; padding:8px 10px; font-size:12.5px; font-family:inherit;
+  }
+  .entrada-data-input{
+    background:var(--bg-soft); border:1px solid var(--ice-line); color:var(--text);
+    border-radius:8px; padding:8px 10px; font-size:12.5px; font-family:inherit;
+  }
+  .entrada-qtd-row{ display:flex; align-items:center; gap:10px; }
+  .entrada-qtd-row .cr-qtd{ font-size:16px; min-width:26px; }
+  .entrada-vagas-lista{
+    display:flex; flex-direction:column; gap:4px; margin-top:12px; max-height:260px; overflow-y:auto;
+  }
+  .entrada-vaga-row{
+    background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:7px;
+    padding:7px 10px; font-size:12px; font-family:'Consolas', monospace; color:var(--text);
+  }
+
   @media (max-width:900px){
     .layout{ flex-direction:column; }
     .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
@@ -357,6 +381,7 @@
   <div class="view-tabs-inner">
     <button class="view-tab active" id="tabMapa" data-view="mapa">🗺️ Planta da Câmara</button>
     <button class="view-tab" id="tabCarga" data-view="carga">🚛 Montar Carga</button>
+    <button class="view-tab" id="tabEntrada" data-view="entrada">📥 Nova Entrada</button>
   </div>
 </div>
 
@@ -450,6 +475,50 @@
   </div>
 </div>
 
+<div id="viewEntrada" class="container" style="display:none;">
+  <div class="carga-layout">
+
+    <div class="carga-col-produtos">
+      <div class="carga-panel-title">📥 Produto que está entrando</div>
+      <div class="busca-row">
+        <span class="busca-ico">🔍</span>
+        <input type="text" id="buscaEntradaProduto" class="busca-input" placeholder="Buscar no catálogo…" autocomplete="off">
+      </div>
+      <div class="carga-dica">A lista vem do catálogo oficial do CIGAM — só escolher, sem digitar nome de produto.</div>
+      <div id="listaProdutosEntrada" class="carga-produtos-lista"></div>
+    </div>
+
+    <div class="carga-col-caminhao">
+      <div class="carga-panel-title">📝 Detalhes da entrada</div>
+      <div id="entradaSelecionado" class="entrada-selecionado-vazio">Escolha um produto na lista ao lado.</div>
+
+      <div id="entradaCampos" style="display:none;">
+        <label class="entrada-label">Família</label>
+        <div id="entradaFamiliaWrap"></div>
+
+        <label class="entrada-label">Quantidade de paletes entrando</label>
+        <div class="entrada-qtd-row">
+          <button class="cr-step-btn" id="entradaQtdMenos" type="button">−</button>
+          <span class="cr-qtd" id="entradaQtdValor">1</span>
+          <button class="cr-step-btn" id="entradaQtdMais" type="button">+</button>
+        </div>
+
+        <label class="entrada-label">Data de entrada</label>
+        <input type="date" id="entradaData" class="entrada-data-input">
+
+        <button id="btnCalcularVagas" class="btn-sync" style="margin-top:14px;">📍 Calcular posições sugeridas</button>
+
+        <div id="entradaVagasPreview"></div>
+
+        <button id="btnConfirmarEntrada" class="btn-sync btn-confirmar" style="display:none;margin-top:12px;">✅ Confirmar entrada</button>
+      </div>
+
+      <div class="carga-aviso" style="margin-top:16px;">⚠ As posições são sugeridas automaticamente (mesma regra de FIFO do "Onde guardar"). "Confirmar entrada" grava direto na planilha via Apps Script.</div>
+    </div>
+
+  </div>
+</div>
+
 <footer>Planta de Endereçamento · Câmara Fria · Bread King</footer>
 <div class="tip" id="tip"></div>
 
@@ -502,6 +571,7 @@ let andarAtual = 4; // andar mais alto como padrão
    ====================================================================== */
 const CSV_OCUPACAO = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=0';
 const CSV_FAMILIAS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=864252146';
+const CSV_PRODUTOS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=1988307963'; // catálogo oficial (código + descrição), vindo do CIGAM
 
 /* ======================================================================
    CONFIRMAÇÃO AUTOMÁTICA DE CARGA (aba "Montar Carga")
@@ -524,6 +594,12 @@ let FILTRO_PRODUTO = '';       // texto de busca (minúsculo, sem espaço nas po
 let OCUPACAO_VISAO = 'camara'; // 'camara' | 'rua' | 'andar' — modo do painel de ocupação
 let FILTRO_CARGA = '';         // texto de busca — aba Montar Carga
 let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montagem (só em memória, não mexe na planilha)
+
+let PRODUTOS_CATALOGO = [];    // [{ codigo, descricao }] — catálogo oficial vindo do CIGAM (aba "Produtos")
+let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada
+let ENTRADA_PRODUTO = null;    // descrição do produto selecionado na Nova Entrada
+let ENTRADA_QTD = 1;
+let ENTRADA_VAGAS = [];        // posições sugeridas calculadas pro lote atual
 
 /* Confere se algum produto de um palete bate com a busca ativa.
    Sem busca ativa, tudo "combina" (não filtra nada). */
@@ -637,12 +713,16 @@ async function carregarDados(){
   const statusEl = document.getElementById('syncStatus');
   if(statusEl) statusEl.textContent = 'Atualizando…';
   try{
-    const [ocupTxt, famTxt] = await Promise.all([
+    const [ocupTxt, famTxt, prodTxt] = await Promise.all([
       fetch(CSV_OCUPACAO).then(r=>r.text()),
       fetch(CSV_FAMILIAS).then(r=>r.text()),
+      fetch(CSV_PRODUTOS).then(r=>r.text()),
     ]);
     const ocupRows = parseCSV(ocupTxt);
     FAMILIAS_CATALOGO = parseCSV(famTxt);
+    PRODUTOS_CATALOGO = parseCSV(prodTxt)
+      .map(r => ({ codigo: (r['CODIGO'] || '').trim(), descricao: (r['DESCRICAO'] || r['DESCRIÇÃO'] || '').trim() }))
+      .filter(p => p.descricao);
 
     // linha 1 da planilha é o cabeçalho, então a linha real de cada item
     // de ocupRows[i] é i+2 — isso é o que mostramos no aviso, pra bater
@@ -1551,6 +1631,232 @@ async function confirmarCargaRetirada(){
   }
 }
 
+/* ======================================================================
+   ABA "NOVA ENTRADA"
+   Em vez de digitar rua/lado/andar/posição/palete na mão pra cada palete
+   que chega, a estoquista escolhe o produto (do catálogo oficial do
+   CIGAM, sem digitação) e a quantidade — o sistema sugere sozinho onde
+   guardar cada palete, seguindo a mesma regra de FIFO já usada no
+   "Onde guardar o próximo palete", e grava tudo de uma vez na planilha.
+   ====================================================================== */
+
+function listaProdutosCatalogoFiltrada(){
+  return PRODUTOS_CATALOGO.filter(p => !FILTRO_ENTRADA || p.descricao.toLowerCase().includes(FILTRO_ENTRADA));
+}
+
+function familiasConhecidas(){
+  return [...new Set(OCUPACAO_REGISTROS.filter(r => r.ocupado && r.familia).map(r => r.familia))].sort();
+}
+
+/* Simula, palete por palete, onde a família deveria guardar os próximos
+   N paletes — reaproveita statusRuaLado (mesma função do painel "Onde
+   guardar"), só que trocando OCUPACAO_MAP por uma cópia temporária que
+   vai sendo preenchida a cada palete simulado, pra não repetir a mesma
+   vaga duas vezes. Restaura o mapa real no final, sempre. */
+function sugerirVagasParaEntrada(familia, quantidade){
+  const mapaReal = OCUPACAO_MAP;
+  OCUPACAO_MAP = { ...OCUPACAO_MAP };
+
+  const ruasAtivas = new Set();
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(r.ocupado && r.familia === familia) ruasAtivas.add(`${r.rua}-${r.lado}`);
+  });
+
+  const vagas = [];
+  try{
+    for(let i = 0; i < quantidade; i++){
+      let alvo = null;
+
+      // 1) continua numa rua onde a família já está, priorizando a mais cheia (consolidar)
+      const candidatas = [...ruasAtivas]
+        .map(k => { const [rua, lado] = k.split('-'); return statusRuaLado(Number(rua), lado); })
+        .filter(s => s.andarAlvo !== null)
+        .sort((a, b) => a.livresTotal - b.livresTotal);
+      if(candidatas.length) alvo = candidatas[0];
+
+      // 2) senão, abre uma rua totalmente livre (nenhuma família ainda)
+      if(!alvo){
+        const todas = [];
+        RUAS.forEach(rua => rua.lados.forEach(lado => todas.push(statusRuaLado(rua.numero, lado))));
+        alvo = todas.find(s => !s.temAlgumaFamilia && s.andarAlvo !== null) || null;
+      }
+
+      if(!alvo) break; // não sobrou vaga em lugar nenhum pra essa família
+
+      vagas.push({ rua: alvo.rua, lado: alvo.lado, andar: alvo.andarAlvo, posicao: alvo.vaga.posicao, palete: alvo.vaga.palete });
+      ruasAtivas.add(`${alvo.rua}-${alvo.lado}`);
+      OCUPACAO_MAP[cellCode(alvo.rua, alvo.lado, alvo.andar, alvo.vaga.posicao, alvo.vaga.palete)] = { familia };
+    }
+  } finally {
+    OCUPACAO_MAP = mapaReal; // sempre restaura o mapa real, mesmo se algo der errado acima
+  }
+
+  return vagas;
+}
+
+function renderListaProdutosEntrada(){
+  const el = document.getElementById('listaProdutosEntrada');
+  if(!el) return;
+  const lista = listaProdutosCatalogoFiltrada();
+  if(lista.length === 0){
+    el.innerHTML = `<div class="carga-vazio">${PRODUTOS_CATALOGO.length === 0 ? 'Catálogo ainda não carregado.' : 'Nenhum produto encontrado.'}</div>`;
+    return;
+  }
+  el.innerHTML = lista.map(p => `
+    <div class="produto-chip" data-descricao="${escapeHtml(p.descricao)}">
+      <span class="chip-nome">${escapeHtml(p.descricao)}</span>
+      <span class="chip-qtd">#${escapeHtml(p.codigo)}</span>
+    </div>
+  `).join('');
+  el.querySelectorAll('.produto-chip').forEach(chip => {
+    chip.addEventListener('click', () => selecionarProdutoEntrada(chip.getAttribute('data-descricao')));
+  });
+}
+
+function renderFamiliaEntrada(){
+  const wrap = document.getElementById('entradaFamiliaWrap');
+  const sugerida = familiaDoProduto(ENTRADA_PRODUTO); // se o produto já tem histórico, puxa a família dele
+  const conhecidas = familiasConhecidas();
+  wrap.innerHTML = `
+    <select id="entradaFamiliaSelect" class="entrada-select">
+      ${conhecidas.map(f => `<option value="${escapeHtml(f)}" ${f === sugerida ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
+      <option value="__nova__" ${!sugerida ? 'selected' : ''}>+ nova família…</option>
+    </select>
+    <input type="text" id="entradaFamiliaNova" class="entrada-select" placeholder="Nome da nova família" style="display:${sugerida ? 'none' : 'block'};margin-top:6px;">
+  `;
+  document.getElementById('entradaFamiliaSelect').addEventListener('change', e => {
+    document.getElementById('entradaFamiliaNova').style.display = e.target.value === '__nova__' ? 'block' : 'none';
+  });
+}
+
+function familiaEntradaEscolhida(){
+  const sel = document.getElementById('entradaFamiliaSelect');
+  if(!sel) return '';
+  if(sel.value === '__nova__') return document.getElementById('entradaFamiliaNova').value.trim();
+  return sel.value;
+}
+
+function selecionarProdutoEntrada(descricao){
+  ENTRADA_PRODUTO = descricao;
+  ENTRADA_QTD = 1;
+  ENTRADA_VAGAS = [];
+  document.getElementById('entradaSelecionado').textContent = `Produto selecionado: ${descricao}`;
+  document.getElementById('entradaCampos').style.display = '';
+  document.getElementById('entradaQtdValor').textContent = '1';
+  document.getElementById('entradaVagasPreview').innerHTML = '';
+  document.getElementById('btnConfirmarEntrada').style.display = 'none';
+  const dataInput = document.getElementById('entradaData');
+  if(!dataInput.value) dataInput.value = new Date().toISOString().slice(0, 10);
+  renderFamiliaEntrada();
+}
+
+function renderVagasPreview(){
+  const el = document.getElementById('entradaVagasPreview');
+  const btnConfirmar = document.getElementById('btnConfirmarEntrada');
+  if(ENTRADA_VAGAS.length === 0){
+    el.innerHTML = `<div class="carga-vazio">Não sobrou vaga em lugar nenhum pra essa família/quantidade.</div>`;
+    btnConfirmar.style.display = 'none';
+    return;
+  }
+  const faltaram = ENTRADA_QTD - ENTRADA_VAGAS.length;
+  el.innerHTML = `
+    <div class="entrada-vagas-lista">
+      ${ENTRADA_VAGAS.map((v, i) => {
+        const ladoTxt = v.lado === 'U' ? '' : ` Lado ${v.lado}`;
+        return `<div class="entrada-vaga-row">${i + 1}. Rua ${v.rua}${ladoTxt} · Andar ${v.andar} · Pos.${String(v.posicao).padStart(2, '0')}-P${v.palete}</div>`;
+      }).join('')}
+    </div>
+    ${faltaram > 0 ? `<div class="carga-aviso" style="margin-top:10px;">⚠ Só sobrou vaga pra ${ENTRADA_VAGAS.length} de ${ENTRADA_QTD} paletes — a câmara está sem espaço pra essa família em qualquer rua.</div>` : ''}
+  `;
+  btnConfirmar.style.display = '';
+}
+
+/* Manda o lote de entradas pro Apps Script, que grava as linhas novas
+   direto na planilha (FAMÍLIA, PRODUTO, RUA, LADO, ANDAR, POSIÇÃO,
+   PALETE, DATA ENTRADA) — sem precisar digitar endereço na mão. */
+async function confirmarEntrada(){
+  if(ENTRADA_VAGAS.length === 0) return;
+  const familia = familiaEntradaEscolhida();
+  if(!familia){ alert('Escolha ou digite uma família antes de confirmar.'); return; }
+  const dataInput = document.getElementById('entradaData').value;
+  if(!dataInput){ alert('Escolha a data de entrada.'); return; }
+  const dataBR = dataInput.split('-').reverse().join('/'); // yyyy-mm-dd -> dd/mm/yyyy
+
+  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
+    alert('A gravação automática ainda não foi configurada (falta a URL do Apps Script).');
+    return;
+  }
+  if(!confirm(`Confirmar a entrada de ${ENTRADA_VAGAS.length} palete(s) de "${ENTRADA_PRODUTO}"?\n\nIsso vai criar ${ENTRADA_VAGAS.length} linha(s) nova(s) na planilha.`)) return;
+
+  const btn = document.getElementById('btnConfirmarEntrada');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Registrando…';
+
+  try{
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        token: APPS_SCRIPT_TOKEN,
+        acao: 'entrada',
+        entradas: ENTRADA_VAGAS.map(v => ({
+          familia, produto: ENTRADA_PRODUTO,
+          rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
+          dataEntrada: dataBR,
+        })),
+      }),
+    });
+    const resultado = await resp.json();
+
+    if(!resultado.ok){
+      alert('Não deu pra registrar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
+      return;
+    }
+
+    alert(`✅ ${resultado.linhas} palete(s) registrados na planilha!`);
+    ENTRADA_PRODUTO = null;
+    ENTRADA_QTD = 1;
+    ENTRADA_VAGAS = [];
+    document.getElementById('entradaCampos').style.display = 'none';
+    document.getElementById('entradaSelecionado').textContent = 'Escolha um produto na lista ao lado.';
+    await carregarDados(); // resincroniza o mapa com a planilha já atualizada
+  } catch(err){
+    console.error('Erro ao confirmar entrada:', err);
+    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet.\n\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
+function inicializarAbaEntrada(){
+  const busca = document.getElementById('buscaEntradaProduto');
+  busca.addEventListener('input', () => {
+    FILTRO_ENTRADA = busca.value.trim().toLowerCase();
+    renderListaProdutosEntrada();
+  });
+
+  document.getElementById('entradaQtdMenos').addEventListener('click', () => {
+    ENTRADA_QTD = Math.max(1, ENTRADA_QTD - 1);
+    document.getElementById('entradaQtdValor').textContent = ENTRADA_QTD;
+  });
+  document.getElementById('entradaQtdMais').addEventListener('click', () => {
+    ENTRADA_QTD = Math.min(84, ENTRADA_QTD + 1); // teto de segurança (câmara não tem mais posições que isso por andar)
+    document.getElementById('entradaQtdValor').textContent = ENTRADA_QTD;
+  });
+
+  document.getElementById('btnCalcularVagas').addEventListener('click', () => {
+    const familia = familiaEntradaEscolhida();
+    if(!familia){ alert('Escolha ou digite uma família antes de calcular as posições.'); return; }
+    ENTRADA_VAGAS = sugerirVagasParaEntrada(familia, ENTRADA_QTD);
+    renderVagasPreview();
+  });
+
+  document.getElementById('btnConfirmarEntrada').addEventListener('click', confirmarEntrada);
+
+  renderListaProdutosEntrada();
+}
+
 function inicializarAbaCarga(){
   const buscaCarga = document.getElementById('buscaCarga');
   buscaCarga.addEventListener('input', ()=>{
@@ -1579,12 +1885,14 @@ function inicializarAbaCarga(){
 }
 
 function trocarView(view){
-  const mapa = view === 'mapa';
-  document.getElementById('viewMapa').style.display = mapa ? '' : 'none';
-  document.getElementById('viewCarga').style.display = mapa ? 'none' : '';
-  document.getElementById('tabMapa').classList.toggle('active', mapa);
-  document.getElementById('tabCarga').classList.toggle('active', !mapa);
-  if(!mapa) renderCargaTudo(); // garante números atualizados ao entrar na aba
+  document.getElementById('viewMapa').style.display = view === 'mapa' ? '' : 'none';
+  document.getElementById('viewCarga').style.display = view === 'carga' ? '' : 'none';
+  document.getElementById('viewEntrada').style.display = view === 'entrada' ? '' : 'none';
+  document.getElementById('tabMapa').classList.toggle('active', view === 'mapa');
+  document.getElementById('tabCarga').classList.toggle('active', view === 'carga');
+  document.getElementById('tabEntrada').classList.toggle('active', view === 'entrada');
+  if(view === 'carga') renderCargaTudo();
+  if(view === 'entrada') renderListaProdutosEntrada();
 }
 
 function renderFloorPanel(){
@@ -1617,6 +1925,7 @@ function renderAll(){
   document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
+  renderListaProdutosEntrada(); // idem pra Nova Entrada
 }
 
 /* Estado do tooltip "fixado" — em telas touch (tablet/celular na câmara fria)
@@ -1689,7 +1998,9 @@ btnLimparBusca.addEventListener('click', ()=>{
 
 document.getElementById('tabMapa').addEventListener('click', ()=> trocarView('mapa'));
 document.getElementById('tabCarga').addEventListener('click', ()=> trocarView('carga'));
+document.getElementById('tabEntrada').addEventListener('click', ()=> trocarView('entrada'));
 inicializarAbaCarga();
+inicializarAbaEntrada();
 
 renderFloorPanel();
 renderAll();
