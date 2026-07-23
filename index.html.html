@@ -318,6 +318,9 @@
   .carga-acoes{ display:flex; gap:10px; margin-bottom:14px; }
   .btn-secundario{ background:var(--bg-soft); color:var(--text-soft); }
   .btn-secundario:hover{ color:var(--text); border-color:var(--frost-dim); }
+  .btn-confirmar{ border-color:var(--highlight); color:var(--highlight); }
+  .btn-confirmar:hover{ background:rgba(186,255,41,0.1); }
+  .btn-confirmar:disabled{ border-color:var(--ice-line); color:var(--text-soft); }
 
   .carga-aviso{
     font-size:11px; color:var(--extra); line-height:1.5; background:rgba(226,163,61,0.08);
@@ -439,8 +442,9 @@
       <div class="carga-acoes">
         <button id="btnLimparCarga" class="btn-sync btn-secundario">🗑 Limpar carga</button>
         <button id="btnGerarPdf" class="btn-sync">📄 Gerar PDF da carga</button>
+        <button id="btnConfirmarCarga" class="btn-sync btn-confirmar">✅ Confirmar carga retirada</button>
       </div>
-      <div class="carga-aviso">⚠ Montar a carga aqui não retira o produto da planilha — depois de carregar fisicamente, ainda é preciso registrar a DATA SAÍDA na aba "Ocupação" pra liberar a posição no mapa.</div>
+      <div class="carga-aviso">⚠ "Confirmar carga retirada" registra a DATA SAÍDA de hoje direto na planilha (via Apps Script) e libera as posições no mapa. Só use depois que os paletes já tiverem saído fisicamente da câmara.</div>
     </div>
 
   </div>
@@ -498,6 +502,17 @@ let andarAtual = 4; // andar mais alto como padrão
    ====================================================================== */
 const CSV_OCUPACAO = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=0';
 const CSV_FAMILIAS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=864252146';
+
+/* ======================================================================
+   CONFIRMAÇÃO AUTOMÁTICA DE CARGA (aba "Montar Carga")
+   Depois de publicar o Apps Script (ver passo a passo combinado com o
+   time), troque os 2 valores abaixo pela URL do Web App publicado e pela
+   mesma senha configurada lá dentro do script. Enquanto APPS_SCRIPT_URL
+   não for trocada, o botão "Confirmar carga" avisa que ainda falta
+   configurar, em vez de tentar chamar uma URL que não existe.
+   ====================================================================== */
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZLHKtQRCq9w_uWC8gkgbybc812hWss-i3L0rP6KKx10Sn4GHbJQjE92BqVAS_GdES/exec'; // termina em /exec
+const APPS_SCRIPT_TOKEN = 'bk-camara-2026-x7';               // mesma senha do Code.gs
 
 let OCUPACAO_REGISTROS = [];   // todas as linhas válidas da aba Ocupação
 let LINHAS_IGNORADAS = [];     // linhas da aba Ocupação descartadas por dado incompleto (linha + motivo)
@@ -1370,11 +1385,13 @@ function renderCargaLista(){
     resumoEl.innerHTML = '';
     document.getElementById('btnGerarPdf').disabled = true;
     document.getElementById('btnLimparCarga').disabled = true;
+    document.getElementById('btnConfirmarCarga').disabled = true;
     return;
   }
 
   document.getElementById('btnGerarPdf').disabled = false;
   document.getElementById('btnLimparCarga').disabled = false;
+  document.getElementById('btnConfirmarCarga').disabled = false;
 
   const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0);
   resumoEl.innerHTML = `<strong>${totalPaletes}</strong> palete${totalPaletes===1?'':'s'} · <strong>${CARGA_ITENS.length}</strong> produto${CARGA_ITENS.length===1?'':'s'} diferente${CARGA_ITENS.length===1?'':'s'}`;
@@ -1475,6 +1492,65 @@ function gerarPDFCarga(){
   doc.save(nomeArquivo);
 }
 
+/* Manda a carga montada pro Apps Script, que preenche a DATA SAÍDA de hoje
+   nas linhas correspondentes da aba "Ocupação". Usa a MESMA função
+   selecionarPaletesParaProduto do PDF, então os paletes confirmados são
+   exatamente os mesmos que saíram impressos no romaneio. */
+async function confirmarCargaRetirada(){
+  if(CARGA_ITENS.length === 0) return;
+
+  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
+    alert('A confirmação automática ainda não foi configurada.\n\nÉ preciso publicar o Apps Script e colar a URL dele na constante APPS_SCRIPT_URL, no início do código. Enquanto isso, continue registrando a DATA SAÍDA manualmente na planilha.');
+    return;
+  }
+
+  const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0);
+  if(!confirm(`Confirmar a retirada de ${totalPaletes} palete(s)?\n\nIsso vai preencher a DATA SAÍDA de hoje (${new Date().toLocaleDateString('pt-BR')}) nessas linhas da planilha. Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
+
+  const btn = document.getElementById('btnConfirmarCarga');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Confirmando…';
+
+  const paletes = [];
+  CARGA_ITENS.forEach(item=>{
+    selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(p=>{
+      paletes.push({ produto: item.produto, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete });
+    });
+  });
+
+  try{
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ token: APPS_SCRIPT_TOKEN, paletes })
+    });
+    const resultado = await resp.json();
+
+    if(!resultado.ok){
+      alert('Não deu pra confirmar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
+      return;
+    }
+
+    const falhas = resultado.resultados.filter(r => !r.ok);
+    if(falhas.length){
+      alert(`${resultado.resultados.length - falhas.length} de ${resultado.resultados.length} paletes confirmados.\n\n${falhas.length} não foram encontrados na planilha (confira manualmente — pode ser um palete misto que outro item da carga já tinha confirmado):\n\n` +
+        falhas.map(f => `• ${f.endereco} (${f.produto})`).join('\n'));
+    } else {
+      alert(`✅ ${resultado.resultados.length} palete(s) confirmados! A DATA SAÍDA de hoje foi registrada na planilha.`);
+    }
+
+    CARGA_ITENS = [];
+    renderCargaTudo();
+    await carregarDados(); // resincroniza o mapa com a planilha já atualizada
+  } catch(err){
+    console.error('Erro ao confirmar carga:', err);
+    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet e se a URL configurada está correta.\n\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
 function inicializarAbaCarga(){
   const buscaCarga = document.getElementById('buscaCarga');
   buscaCarga.addEventListener('input', ()=>{
@@ -1497,6 +1573,7 @@ function inicializarAbaCarga(){
 
   document.getElementById('btnLimparCarga').addEventListener('click', limparCarga);
   document.getElementById('btnGerarPdf').addEventListener('click', gerarPDFCarga);
+  document.getElementById('btnConfirmarCarga').addEventListener('click', confirmarCargaRetirada);
 
   renderCargaTudo();
 }
