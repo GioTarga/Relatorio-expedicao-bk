@@ -166,8 +166,9 @@
 
   .tip{
     position:fixed; pointer-events:none; background:#04141a; border:1px solid var(--frost-dim);
-    color:var(--frost); font-family:'Consolas', monospace; font-size:12px; padding:6px 10px;
-    border-radius:6px; opacity:0; transition:opacity 0.1s; z-index:50; white-space:nowrap;
+    color:var(--frost); font-family:'Consolas', monospace; font-size:12px; padding:8px 12px;
+    border-radius:6px; opacity:0; transition:opacity 0.1s; z-index:50;
+    max-width:250px; white-space:normal; line-height:1.4; box-shadow:0 4px 16px rgba(0,0,0,0.4);
   }
 
   footer{ text-align:center; font-size:11px; color:var(--text-soft); padding:20px; }
@@ -323,6 +324,16 @@ function parseCSV(text){
   });
 }
 
+/* Escapa texto vindo da planilha antes de inserir no HTML — a planilha é
+   editada por várias pessoas, então tratamos qualquer campo de texto (família,
+   produto, lado, datas) como entrada não confiável pra evitar que um valor
+   digitado errado quebre a página ou injete HTML/script. */
+function escapeHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
 /* Cor determinística por família, pra não precisar cadastrar cor manualmente */
 function familyColor(nome){
   let hash = 0;
@@ -448,8 +459,8 @@ function renderRackSvg(rua, lado, andar){
     const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
     const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
     const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
-    const dataP1 = ocupP1 ? `${codeP1} · ${ocupP1.familia || 'sem família'}${ocupP1.produto ? ' · ' + ocupP1.produto : ''} · desde ${ocupP1.dataEntrada || '?'}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
-    const dataP2 = ocupP2 ? `${codeP2} · ${ocupP2.familia || 'sem família'}${ocupP2.produto ? ' · ' + ocupP2.produto : ''} · desde ${ocupP2.dataEntrada || '?'}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
+    const dataP1 = ocupP1 ? `${codeP1} · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produto ? ' · ' + escapeHtml(ocupP1.produto) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
+    const dataP2 = ocupP2 ? `${codeP2} · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produto ? ' · ' + escapeHtml(ocupP2.produto) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
     const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
     // contorno externo da posição (agrupa os 2 paletes)
     rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
@@ -606,7 +617,7 @@ function renderConflitos(){
 
   const itens = OCUPACAO_CONFLITOS.map(c=>{
     const regsHtml = c.registros.map(r=>
-      `<span class="sub">→ ${r.familia || 'sem família'}${r.produto ? ' · ' + r.produto : ''} · entrada ${r.dataEntrada || '?'}</span>`
+      `<span class="sub">→ ${escapeHtml(r.familia || 'sem família')}${r.produto ? ' · ' + escapeHtml(r.produto) : ''} · entrada ${escapeHtml(r.dataEntrada || '?')}</span>`
     ).join('');
     return `<li><strong>${c.key}</strong> tem ${c.registros.length} lançamentos em aberto ao mesmo tempo — vá até a câmara conferir o que está de fato nessa vaga.${regsHtml}</li>`;
   }).join('');
@@ -629,17 +640,17 @@ function renderProximosASair(){
 
   const cards = familias.map(f=>{
     const itens = porFamilia[f].map(r=>{
-      const ladoTxt = r.lado === 'U' ? '' : `${r.lado} · `;
+      const ladoTxt = r.lado === 'U' ? '' : `${escapeHtml(r.lado)} · `;
       return `<div class="item-wrap">
         <div class="item">
           <span class="pos">Rua ${r.rua} · ${ladoTxt}And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</span>
           <span class="dias">${r.dias}d</span>
         </div>
-        ${r.produto ? `<div class="item-produto">${r.produto}</div>` : ''}
+        ${r.produto ? `<div class="item-produto">${escapeHtml(r.produto)}</div>` : ''}
       </div>`;
     }).join('');
     return `<div class="saida-card">
-      <div class="familia" style="color:${familyColor(f)}">${f}</div>
+      <div class="familia" style="color:${familyColor(f)}">${escapeHtml(f)}</div>
       ${itens}
     </div>`;
   }).join('');
@@ -708,19 +719,19 @@ function renderAlocacaoSugerida(){
 
   const sugestoes = calcularAlocacaoSugerida();
   const cards = sugestoes.map(s=>{
-    const ladoTxt = s.lado === 'U' ? '' : ` · Lado ${s.lado}`;
+    const ladoTxt = s.lado === 'U' ? '' : ` · Lado ${escapeHtml(s.lado)}`;
     const familiaTxt = s.familia ? s.familia : 'sem família atribuída ainda';
     const familiaCor = s.familia ? familyColor(s.familia) : 'var(--text-soft)';
     if(s.cheio){
       return `<div class="aloc-card cheio">
-        <div class="familia" style="color:${familiaCor}">${familiaTxt}</div>
+        <div class="familia" style="color:${familiaCor}">${escapeHtml(familiaTxt)}</div>
         <div class="aloc-rua">Rua ${s.rua}${ladoTxt}</div>
         <div class="aloc-destino">🚫 Câmara cheia nessa rua — sem vaga disponível</div>
       </div>`;
     }
     const vagaTxt = s.vaga ? `Pos.${String(s.vaga.posicao).padStart(2,'0')}-P${s.vaga.palete}` : '—';
     return `<div class="aloc-card">
-      <div class="familia" style="color:${familiaCor}">${familiaTxt}</div>
+      <div class="familia" style="color:${familiaCor}">${escapeHtml(familiaTxt)}</div>
       <div class="aloc-rua">Rua ${s.rua}${ladoTxt}</div>
       <div class="aloc-destino">📥 Guardar no <strong>Andar ${s.andar}</strong> · sugestão: ${vagaTxt}</div>
       <div class="aloc-sub">${s.livres} vaga(s) livre(s) nesse andar</div>
@@ -740,7 +751,7 @@ function renderFamilyLegend(){
   const familias = [...new Set(OCUPACAO_REGISTROS.filter(r=>r.ocupado && r.familia).map(r=>r.familia))].sort();
   if(familias.length === 0){ el.innerHTML = ''; return; }
   el.innerHTML = familias.map(f=>
-    `<span><i class="sw" style="background:${familyColor(f)};border:1px solid rgba(255,255,255,0.25);"></i>${f}</span>`
+    `<span><i class="sw" style="background:${familyColor(f)};border:1px solid rgba(255,255,255,0.25);"></i>${escapeHtml(f)}</span>`
   ).join('');
 }
 
@@ -784,18 +795,52 @@ function renderAll(){
   attachTooltips();
 }
 
+/* Estado do tooltip "fixado" — em telas touch (tablet/celular na câmara fria)
+   não existe hover, então além do hover pra mouse a gente também deixa
+   TOCAR na posição pra fixar o balão de detalhe na tela, e tocar em
+   qualquer outro lugar pra fechar. */
+let tipPinned = false;
+
+function positionTip(tip, x, y){
+  // mantém o balão dentro da tela (importante em telas estreitas de celular)
+  const margin = 14;
+  const maxLeft = window.innerWidth - 260;
+  const left = Math.min(x + margin, Math.max(margin, maxLeft));
+  tip.style.left = left + 'px';
+  tip.style.top = (y + margin) + 'px';
+}
+
 function attachTooltips(){
   const tip = document.getElementById('tip');
   document.querySelectorAll('.rack-cell').forEach(cell=>{
     cell.addEventListener('mousemove', (e)=>{
+      if(tipPinned) return; // não sobrescreve um balão fixado por toque
       tip.textContent = cell.getAttribute('data-code');
-      tip.style.left = (e.clientX + 14) + 'px';
-      tip.style.top = (e.clientY + 14) + 'px';
+      positionTip(tip, e.clientX, e.clientY);
       tip.style.opacity = '1';
     });
-    cell.addEventListener('mouseleave', ()=>{ tip.style.opacity = '0'; });
+    cell.addEventListener('mouseleave', ()=>{
+      if(!tipPinned) tip.style.opacity = '0';
+    });
+    // toque/clique fixa o balão na posição tocada — essencial em tablet,
+    // onde não existe hover
+    cell.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      tip.textContent = cell.getAttribute('data-code');
+      positionTip(tip, e.clientX, e.clientY);
+      tip.style.opacity = '1';
+      tipPinned = true;
+    });
   });
 }
+
+// toque/clique fora de qualquer posição fecha o balão fixado
+document.addEventListener('click', ()=>{
+  if(tipPinned){
+    tipPinned = false;
+    document.getElementById('tip').style.opacity = '0';
+  }
+});
 
 document.getElementById('btnAtualizar').addEventListener('click', ()=>{
   const btn = document.getElementById('btnAtualizar');
