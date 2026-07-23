@@ -248,6 +248,82 @@
 
   footer{ text-align:center; font-size:11px; color:var(--text-soft); padding:20px; }
 
+  .view-tabs{ background:var(--panel); border-bottom:1px solid var(--ice-line); }
+  .view-tabs-inner{ max-width:1400px; margin:0 auto; padding:0 24px; display:flex; gap:4px; }
+  .view-tab{
+    background:none; border:none; border-bottom:3px solid transparent; color:var(--text-soft);
+    font-size:13px; font-weight:700; padding:14px 18px 11px; cursor:pointer; font-family:inherit;
+  }
+  .view-tab:hover{ color:var(--text); }
+  .view-tab.active{ color:var(--frost); border-bottom-color:var(--frost); }
+
+  .carga-layout{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+  .carga-col-produtos{ flex:1 1 320px; min-width:280px; }
+  .carga-col-caminhao{ flex:1.4 1 420px; min-width:320px; }
+  .carga-panel-title{
+    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--frost); margin-bottom:12px;
+  }
+  .carga-dica{ font-size:11px; color:var(--text-soft); margin:8px 0 12px; line-height:1.5; }
+
+  .carga-produtos-lista{
+    display:flex; flex-direction:column; gap:6px; max-height:520px; overflow-y:auto;
+    padding-right:4px;
+  }
+  .produto-chip{
+    display:flex; align-items:center; gap:10px; background:var(--panel); border:1px solid var(--ice-line);
+    border-radius:9px; padding:10px 12px; cursor:grab; user-select:none; transition:border-color 0.15s, transform 0.1s;
+  }
+  .produto-chip:hover{ border-color:var(--frost-dim); }
+  .produto-chip:active{ cursor:grabbing; transform:scale(0.98); }
+  .produto-chip.chip-esgotado{ opacity:0.4; cursor:not-allowed; }
+  .produto-chip .estoque-swatch{ width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .produto-chip .chip-nome{ flex:1; font-size:12.5px; color:var(--text); }
+  .produto-chip .chip-qtd{ font-family:'Consolas', monospace; font-size:11px; color:var(--text-soft); white-space:nowrap; }
+  .produto-chip.chip-flash{ animation: chipFlash 0.4s ease; }
+  @keyframes chipFlash{ 0%{ background:rgba(143,227,240,0.25); } 100%{ background:var(--panel); } }
+
+  .caminhao-drop{
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
+    padding:16px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
+    transition:border-color 0.15s, background 0.15s;
+  }
+  .caminhao-drop.drop-ativo{ border-color:var(--frost); background:rgba(143,227,240,0.06); }
+  .caminhao-svg{ width:100%; max-width:320px; height:auto; }
+
+  .carga-resumo{ font-size:12px; color:var(--text-soft); margin-bottom:10px; }
+  .carga-resumo strong{ color:var(--frost); font-family:'Consolas', monospace; }
+
+  .carga-lista{ display:flex; flex-direction:column; gap:6px; margin-bottom:16px; max-height:320px; overflow-y:auto; }
+  .carga-row{
+    display:flex; align-items:center; gap:10px; background:var(--bg-soft); border:1px solid var(--ice-line);
+    border-radius:9px; padding:9px 12px;
+  }
+  .carga-row .estoque-swatch{ width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .carga-row .cr-nome{ flex:1; font-size:12.5px; color:var(--text); }
+  .carga-row .cr-steppers{ display:flex; align-items:center; gap:6px; }
+  .cr-step-btn{
+    width:24px; height:24px; border-radius:6px; border:1px solid var(--ice-line); background:var(--panel);
+    color:var(--text); cursor:pointer; font-size:14px; line-height:1; font-family:inherit;
+  }
+  .cr-step-btn:hover{ border-color:var(--frost-dim); }
+  .cr-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
+  .cr-qtd{ font-family:'Consolas', monospace; font-weight:700; font-size:13px; min-width:18px; text-align:center; }
+  .cr-remover{
+    background:none; border:none; color:var(--text-soft); cursor:pointer; font-size:14px; padding:2px 4px;
+  }
+  .cr-remover:hover{ color:var(--red); }
+  .carga-vazio{ font-size:12px; color:var(--text-soft); text-align:center; padding:20px 0; }
+
+  .carga-acoes{ display:flex; gap:10px; margin-bottom:14px; }
+  .btn-secundario{ background:var(--bg-soft); color:var(--text-soft); }
+  .btn-secundario:hover{ color:var(--text); border-color:var(--frost-dim); }
+
+  .carga-aviso{
+    font-size:11px; color:var(--extra); line-height:1.5; background:rgba(226,163,61,0.08);
+    border:1px solid var(--extra-dim); border-radius:8px; padding:10px 12px;
+  }
+
   @media (max-width:900px){
     .layout{ flex-direction:column; }
     .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
@@ -274,7 +350,14 @@
   </div>
 </div>
 
-<div class="container">
+<div class="view-tabs">
+  <div class="view-tabs-inner">
+    <button class="view-tab active" id="tabMapa" data-view="mapa">🗺️ Planta da Câmara</button>
+    <button class="view-tab" id="tabCarga" data-view="carga">🚛 Montar Carga</button>
+  </div>
+</div>
+
+<div id="viewMapa" class="container">
   <div class="layout">
 
     <div class="floor-panel" id="floorPanel">
@@ -324,8 +407,49 @@
   </div>
 </div>
 
+<div id="viewCarga" class="container" style="display:none;">
+  <div class="carga-layout">
+
+    <div class="carga-col-produtos">
+      <div class="carga-panel-title">📦 Produtos em estoque</div>
+      <div class="busca-row">
+        <span class="busca-ico">🔍</span>
+        <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar produto…" autocomplete="off">
+      </div>
+      <div class="carga-dica">Toque num produto (ou arraste, no computador) pra adicionar 1 palete à carga.</div>
+      <div id="listaProdutosCarga" class="carga-produtos-lista"></div>
+    </div>
+
+    <div class="carga-col-caminhao">
+      <div class="carga-panel-title">🚛 Carga do caminhão</div>
+      <div id="caminhaoDrop" class="caminhao-drop">
+        <svg viewBox="0 0 300 120" class="caminhao-svg" id="caminhaoSvg">
+          <rect x="8" y="30" width="180" height="62" rx="4" fill="none" stroke="var(--frost-dim)" stroke-width="2" stroke-dasharray="6 4"></rect>
+          <text x="98" y="65" text-anchor="middle" fill="var(--text-soft)" font-size="11" font-family="Consolas, monospace">solte aqui</text>
+          <path d="M188 46 h46 l24 24 v20 h-70 z" fill="none" stroke="var(--frost-dim)" stroke-width="2"></path>
+          <line x1="188" y1="46" x2="188" y2="90" stroke="var(--frost-dim)" stroke-width="2"></line>
+          <rect x="205" y="52" width="24" height="18" rx="1.5" fill="none" stroke="var(--frost-dim)" stroke-width="1.6"></rect>
+          <circle cx="55" cy="94" r="11" fill="var(--bg)" stroke="var(--frost-dim)" stroke-width="2.5"></circle>
+          <circle cx="130" cy="94" r="11" fill="var(--bg)" stroke="var(--frost-dim)" stroke-width="2.5"></circle>
+          <circle cx="238" cy="94" r="11" fill="var(--bg)" stroke="var(--frost-dim)" stroke-width="2.5"></circle>
+        </svg>
+      </div>
+      <div id="cargaResumo" class="carga-resumo"></div>
+      <div id="cargaLista" class="carga-lista"></div>
+      <div class="carga-acoes">
+        <button id="btnLimparCarga" class="btn-sync btn-secundario">🗑 Limpar carga</button>
+        <button id="btnGerarPdf" class="btn-sync">📄 Gerar PDF da carga</button>
+      </div>
+      <div class="carga-aviso">⚠ Montar a carga aqui não retira o produto da planilha — depois de carregar fisicamente, ainda é preciso registrar a DATA SAÍDA na aba "Ocupação" pra liberar a posição no mapa.</div>
+    </div>
+
+  </div>
+</div>
+
 <footer>Planta de Endereçamento · Câmara Fria · Bread King</footer>
 <div class="tip" id="tip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umin.js"></script>
 
 <script>
 /* ======================================================================
@@ -381,8 +505,10 @@ let OCUPACAO_MAP = {};         // key = código da posição (igual ao cellCode)
 let FAMILIAS_CATALOGO = [];    // linhas da aba Famílias
 let ultimaAtualizacao = null;
 
-let FILTRO_PRODUTO = '';       // texto de busca (minúsculo, sem espaço nas pontas)
+let FILTRO_PRODUTO = '';       // texto de busca (minúsculo, sem espaço nas pontas) — aba do mapa
 let OCUPACAO_VISAO = 'camara'; // 'camara' | 'rua' | 'andar' — modo do painel de ocupação
+let FILTRO_CARGA = '';         // texto de busca — aba Montar Carga
+let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montagem (só em memória, não mexe na planilha)
 
 /* Confere se algum produto de um palete bate com a busca ativa.
    Sem busca ativa, tudo "combina" (não filtra nada). */
@@ -1106,6 +1232,284 @@ function renderKPIs(){
   `;
 }
 
+/* ======================================================================
+   ABA "MONTAR CARGA"
+   Ferramenta de planejamento: o estoquista monta a carga arrastando (ou
+   tocando) produtos até o desenho do caminhão, e no fim gera um PDF com
+   o endereço de cada palete pro operador de empilhadeira ir buscar.
+   Importante: isso NÃO altera a planilha — é só um apoio pra montar o
+   romaneio. A baixa de estoque continua sendo feita preenchendo a DATA
+   SAÍDA na aba "Ocupação", como sempre.
+   ====================================================================== */
+
+/* Quantos paletes de um produto existem em estoque agora (conta 1 palete
+   por produto que ele carrega, igual ao painel de estoque). */
+function estoqueDisponivelProduto(produto){
+  let n = 0;
+  OCUPACAO_REGISTROS.forEach(r=>{
+    if(r.ocupado && r.produtos.includes(produto)) n++;
+  });
+  return n;
+}
+
+/* Família associada a um produto, só pra colorir o chip/linha (pega a
+   primeira ocorrência encontrada). */
+function familiaDoProduto(produto){
+  const achado = OCUPACAO_REGISTROS.find(r => r.ocupado && r.produtos.includes(produto) && r.familia);
+  return achado ? achado.familia : '';
+}
+
+/* Lista de todos os produtos em estoque agora, com quantidade disponível,
+   já aplicando o filtro de busca da própria aba Montar Carga. */
+function listaProdutosDisponiveis(){
+  const porProduto = {};
+  OCUPACAO_REGISTROS.forEach(r=>{
+    if(!r.ocupado) return;
+    r.produtos.forEach(p=>{
+      porProduto[p] = (porProduto[p] || 0) + 1;
+    });
+  });
+  return Object.keys(porProduto)
+    .filter(p => !FILTRO_CARGA || p.toLowerCase().includes(FILTRO_CARGA))
+    .map(p => ({ produto: p, disponivel: porProduto[p], familia: familiaDoProduto(p) }))
+    .sort((a,b) => a.produto.localeCompare(b.produto, 'pt-BR'));
+}
+
+/* Escolhe QUAIS paletes exatos entram na carga pra um produto, seguindo
+   o mesmo critério do painel "Retirar primeiro": os que estão há mais
+   tempo em estoque saem primeiro. */
+function selecionarPaletesParaProduto(produto, quantidade){
+  const candidatos = OCUPACAO_REGISTROS
+    .filter(r => r.ocupado && r.produtos.includes(produto))
+    .map(r => ({ ...r, dias: diasEmEstoque(r.dataEntrada) ?? -1 }))
+    .sort((a,b) => b.dias - a.dias);
+  return candidatos.slice(0, quantidade);
+}
+
+function adicionarProdutoNaCarga(produto){
+  const disponivel = estoqueDisponivelProduto(produto);
+  if(disponivel === 0) return;
+  const item = CARGA_ITENS.find(i => i.produto === produto);
+  if(item){
+    if(item.quantidade < disponivel) item.quantidade++;
+  } else {
+    CARGA_ITENS.push({ produto, quantidade: 1 });
+  }
+  renderCargaTudo();
+  flashCaminhao();
+}
+
+function alterarQuantidadeCarga(produto, delta){
+  const item = CARGA_ITENS.find(i => i.produto === produto);
+  if(!item) return;
+  const disponivel = estoqueDisponivelProduto(produto);
+  item.quantidade = Math.max(1, Math.min(disponivel, item.quantidade + delta));
+  renderCargaTudo();
+}
+
+function removerDaCarga(produto){
+  CARGA_ITENS = CARGA_ITENS.filter(i => i.produto !== produto);
+  renderCargaTudo();
+}
+
+function limparCarga(){
+  if(CARGA_ITENS.length === 0) return;
+  if(!confirm('Limpar toda a carga montada até agora?')) return;
+  CARGA_ITENS = [];
+  renderCargaTudo();
+}
+
+function flashCaminhao(){
+  const drop = document.getElementById('caminhaoDrop');
+  drop.classList.add('drop-ativo');
+  setTimeout(()=> drop.classList.remove('drop-ativo'), 250);
+}
+
+function renderListaProdutosCarga(){
+  const el = document.getElementById('listaProdutosCarga');
+  const lista = listaProdutosDisponiveis();
+  if(lista.length === 0){
+    el.innerHTML = `<div class="carga-vazio">${FILTRO_CARGA ? 'Nenhum produto bate com a busca.' : 'Nenhum produto em estoque no momento.'}</div>`;
+    return;
+  }
+  el.innerHTML = lista.map(item=>{
+    const jaNaCarga = CARGA_ITENS.find(i => i.produto === item.produto);
+    const restante = item.disponivel - (jaNaCarga ? jaNaCarga.quantidade : 0);
+    const esgotado = restante <= 0;
+    const cor = item.familia ? familyColor(item.familia) : 'var(--text-soft)';
+    return `<div class="produto-chip${esgotado ? ' chip-esgotado' : ''}" draggable="${!esgotado}" data-produto="${escapeHtml(item.produto)}" title="${esgotado ? 'Todo o estoque desse produto já está na carga' : 'Toque ou arraste pra adicionar à carga'}">
+      <span class="estoque-swatch" style="background:${cor}"></span>
+      <span class="chip-nome">${escapeHtml(item.produto)}</span>
+      <span class="chip-qtd">${restante}/${item.disponivel} palete${item.disponivel===1?'':'s'}</span>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.produto-chip').forEach(chip=>{
+    const produto = chip.getAttribute('data-produto');
+    chip.addEventListener('dragstart', e=>{
+      e.dataTransfer.setData('text/plain', produto);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    // toque/clique também adiciona — essencial pra quem usa tablet, onde
+    // não existe "arrastar e soltar" nativo de verdade
+    chip.addEventListener('click', ()=>{
+      if(chip.classList.contains('chip-esgotado')) return;
+      adicionarProdutoNaCarga(produto);
+      chip.classList.add('chip-flash');
+      setTimeout(()=> chip.classList.remove('chip-flash'), 400);
+    });
+  });
+}
+
+function renderCargaLista(){
+  const listaEl = document.getElementById('cargaLista');
+  const resumoEl = document.getElementById('cargaResumo');
+
+  if(CARGA_ITENS.length === 0){
+    listaEl.innerHTML = `<div class="carga-vazio">Nenhum produto adicionado ainda.</div>`;
+    resumoEl.innerHTML = '';
+    document.getElementById('btnGerarPdf').disabled = true;
+    document.getElementById('btnLimparCarga').disabled = true;
+    return;
+  }
+
+  document.getElementById('btnGerarPdf').disabled = false;
+  document.getElementById('btnLimparCarga').disabled = false;
+
+  const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0);
+  resumoEl.innerHTML = `<strong>${totalPaletes}</strong> palete${totalPaletes===1?'':'s'} · <strong>${CARGA_ITENS.length}</strong> produto${CARGA_ITENS.length===1?'':'s'} diferente${CARGA_ITENS.length===1?'':'s'}`;
+
+  listaEl.innerHTML = CARGA_ITENS.map(item=>{
+    const disponivel = estoqueDisponivelProduto(item.produto);
+    const familia = familiaDoProduto(item.produto);
+    const cor = familia ? familyColor(familia) : 'var(--text-soft)';
+    return `<div class="carga-row">
+      <span class="estoque-swatch" style="background:${cor}"></span>
+      <span class="cr-nome">${escapeHtml(item.produto)}</span>
+      <div class="cr-steppers">
+        <button class="cr-step-btn" data-acao="menos" data-produto="${escapeHtml(item.produto)}" ${item.quantidade<=1?'disabled':''}>−</button>
+        <span class="cr-qtd">${item.quantidade}</span>
+        <button class="cr-step-btn" data-acao="mais" data-produto="${escapeHtml(item.produto)}" ${item.quantidade>=disponivel?'disabled':''}>+</button>
+      </div>
+      <button class="cr-remover" data-acao="remover" data-produto="${escapeHtml(item.produto)}" title="Remover">✕</button>
+    </div>`;
+  }).join('');
+
+  listaEl.querySelectorAll('[data-acao]').forEach(btn=>{
+    const produto = btn.getAttribute('data-produto');
+    const acao = btn.getAttribute('data-acao');
+    btn.addEventListener('click', ()=>{
+      if(acao === 'mais') alterarQuantidadeCarga(produto, 1);
+      else if(acao === 'menos') alterarQuantidadeCarga(produto, -1);
+      else if(acao === 'remover') removerDaCarga(produto);
+    });
+  });
+}
+
+function renderCargaTudo(){
+  renderListaProdutosCarga();
+  renderCargaLista();
+}
+
+/* Gera o romaneio em PDF: pra cada produto da carga, lista os paletes
+   exatos (endereço completo) que devem ser retirados, seguindo FIFO.
+   Esse PDF é o que vai impresso pro operador de empilhadeira. */
+function gerarPDFCarga(){
+  if(CARGA_ITENS.length === 0) return;
+  if(!window.jspdf){
+    alert('Não foi possível carregar a biblioteca de PDF (sem conexão com a internet?). Tente novamente.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const margemX = 15;
+  let y = 18;
+  const agora = new Date();
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text('Romaneio de Carga — Câmara Fria', margemX, y);
+  y += 7;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(90);
+  doc.text(`Gerado em ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR')} · Bread King`, margemX, y);
+  y += 9;
+  doc.setDrawColor(200);
+  doc.line(margemX, y, 195, y);
+  y += 8;
+  doc.setTextColor(20);
+
+  CARGA_ITENS.forEach(item=>{
+    const paletes = selecionarPaletesParaProduto(item.produto, item.quantidade);
+
+    if(y > 268){ doc.addPage(); y = 18; }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`${item.produto} — ${item.quantidade} palete${item.quantidade===1?'':'s'}`, margemX, y);
+    y += 6.5;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    paletes.forEach((p, idx)=>{
+      if(y > 275){ doc.addPage(); y = 18; }
+      const ladoTxt = p.lado === 'U' ? '' : ` · Lado ${p.lado}`;
+      const endereco = `Rua ${p.rua}${ladoTxt} · Andar ${p.andar} · Posição ${String(p.posicao).padStart(2,'0')} · Palete ${p.palete}`;
+      doc.text(`${idx+1}. ${endereco}`, margemX + 4, y);
+      y += 5.5;
+      if(p.produtos.length > 1){
+        doc.setFontSize(8.5);
+        doc.setTextColor(120);
+        const outros = p.produtos.filter(x => x !== item.produto);
+        doc.text(`⚠ palete misto — também contém: ${outros.join(', ')}`, margemX + 8, y);
+        y += 5;
+        doc.setFontSize(10);
+        doc.setTextColor(20);
+      }
+    });
+    y += 4;
+  });
+
+  const nomeArquivo = `romaneio_carga_${agora.toISOString().slice(0,10)}_${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}.pdf`;
+  doc.save(nomeArquivo);
+}
+
+function inicializarAbaCarga(){
+  const buscaCarga = document.getElementById('buscaCarga');
+  buscaCarga.addEventListener('input', ()=>{
+    FILTRO_CARGA = buscaCarga.value.trim().toLowerCase();
+    renderListaProdutosCarga();
+  });
+
+  const drop = document.getElementById('caminhaoDrop');
+  drop.addEventListener('dragover', e=>{
+    e.preventDefault();
+    drop.classList.add('drop-ativo');
+  });
+  drop.addEventListener('dragleave', ()=> drop.classList.remove('drop-ativo'));
+  drop.addEventListener('drop', e=>{
+    e.preventDefault();
+    drop.classList.remove('drop-ativo');
+    const produto = e.dataTransfer.getData('text/plain');
+    if(produto) adicionarProdutoNaCarga(produto);
+  });
+
+  document.getElementById('btnLimparCarga').addEventListener('click', limparCarga);
+  document.getElementById('btnGerarPdf').addEventListener('click', gerarPDFCarga);
+
+  renderCargaTudo();
+}
+
+function trocarView(view){
+  const mapa = view === 'mapa';
+  document.getElementById('viewMapa').style.display = mapa ? '' : 'none';
+  document.getElementById('viewCarga').style.display = mapa ? 'none' : '';
+  document.getElementById('tabMapa').classList.toggle('active', mapa);
+  document.getElementById('tabCarga').classList.toggle('active', !mapa);
+  if(!mapa) renderCargaTudo(); // garante números atualizados ao entrar na aba
+}
+
 function renderFloorPanel(){
   const panel = document.getElementById('floorPanel');
   panel.querySelectorAll('.floor-btn').forEach(b=>b.remove());
@@ -1135,6 +1539,7 @@ function renderAll(){
   renderFamilyLegend();
   document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
   attachTooltips();
+  renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
 }
 
 /* Estado do tooltip "fixado" — em telas touch (tablet/celular na câmara fria)
@@ -1204,6 +1609,10 @@ btnLimparBusca.addEventListener('click', ()=>{
   buscaInput.focus();
   renderAll();
 });
+
+document.getElementById('tabMapa').addEventListener('click', ()=> trocarView('mapa'));
+document.getElementById('tabCarga').addEventListener('click', ()=> trocarView('carga'));
+inicializarAbaCarga();
 
 renderFloorPanel();
 renderAll();
