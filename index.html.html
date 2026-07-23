@@ -158,6 +158,17 @@
   .conflito-panel li{ margin-bottom:6px; }
   .conflito-panel .sub{ display:block; font-size:11px; color:var(--text-soft); margin-top:2px; margin-left:2px; }
 
+  .ignoradas-panel{
+    background:rgba(226,163,61,0.10); border:1px solid var(--extra); border-radius:12px;
+    padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6; color:var(--text);
+  }
+  .ignoradas-panel .ignoradas-title{
+    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--extra); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+  }
+  .ignoradas-panel ul{ margin:0; padding-left:18px; }
+  .ignoradas-panel li{ margin-bottom:4px; }
+
   .conflito-pulse{ animation: conflitoPulse 1.1s ease-in-out infinite; }
   @keyframes conflitoPulse{
     0%, 100% { stroke-opacity: 1; }
@@ -215,6 +226,8 @@
       </div>
 
       <div id="conflitosAlerta"></div>
+
+      <div id="linhasIgnoradasAlerta"></div>
 
       <div id="proximosASair"></div>
 
@@ -289,6 +302,7 @@ const CSV_OCUPACAO = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2S
 const CSV_FAMILIAS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=864252146';
 
 let OCUPACAO_REGISTROS = [];   // todas as linhas válidas da aba Ocupação
+let LINHAS_IGNORADAS = [];     // linhas da aba Ocupação descartadas por dado incompleto (linha + motivo)
 let OCUPACAO_MAP = {};         // key = código da posição (igual ao cellCode) -> registro ocupado
 let FAMILIAS_CATALOGO = [];    // linhas da aba Famílias
 let ultimaAtualizacao = null;
@@ -342,6 +356,10 @@ function familyColor(nome){
   return `hsl(${hue}, 58%, 42%)`;
 }
 
+/* Valida e normaliza uma linha da aba "Ocupação". Em vez de só descartar
+   silenciosamente linhas com dado faltando, devolve o motivo — isso alimenta
+   o aviso "N linhas ignoradas" na tela, pra quem está de olho na planilha
+   saber exatamente o que corrigir (e em qual campo). */
 function normalizeOcupacaoRow(row){
   const rua = parseInt(row['RUA'], 10);
   const andar = parseInt(row['ANDAR'], 10);
@@ -353,8 +371,18 @@ function normalizeOcupacaoRow(row){
   const produto = (row['PRODUTO'] || '').trim();
   const dataEntrada = (row['DATA ENTRADA'] || '').trim();
   const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
-  if(!rua || !andar || !posicao || !paleteNum || !lado) return null;
-  return { rua, lado, andar, posicao, palete: paleteNum, familia, produto, dataEntrada, dataSaida, ocupado: !dataSaida };
+
+  const faltando = [];
+  if(!rua) faltando.push('RUA');
+  if(!andar) faltando.push('ANDAR');
+  if(!posicao) faltando.push('POSIÇÃO');
+  if(!paleteNum) faltando.push('PALETE');
+  if(!lado) faltando.push('LADO');
+
+  if(faltando.length){
+    return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
+  }
+  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, dataEntrada, dataSaida, ocupado: !dataSaida } };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -371,7 +399,16 @@ async function carregarDados(){
     const ocupRows = parseCSV(ocupTxt);
     FAMILIAS_CATALOGO = parseCSV(famTxt);
 
-    OCUPACAO_REGISTROS = ocupRows.map(normalizeOcupacaoRow).filter(Boolean);
+    // linha 1 da planilha é o cabeçalho, então a linha real de cada item
+    // de ocupRows[i] é i+2 — isso é o que mostramos no aviso, pra bater
+    // com o que a pessoa vê ao abrir o Google Sheets
+    OCUPACAO_REGISTROS = [];
+    LINHAS_IGNORADAS = [];
+    ocupRows.forEach((row, i)=>{
+      const resultado = normalizeOcupacaoRow(row);
+      if(resultado.ok) OCUPACAO_REGISTROS.push(resultado.data);
+      else LINHAS_IGNORADAS.push({ linha: i + 2, motivo: resultado.motivo });
+    });
 
     // agrupa por posição+palete pra achar onde há mais de 1 registro "aberto"
     // (sem data de saída) ao mesmo tempo — isso é sempre um erro de
@@ -395,7 +432,10 @@ async function carregarDados(){
     });
 
     ultimaAtualizacao = new Date();
-    if(statusEl) statusEl.textContent = `Atualizado às ${ultimaAtualizacao.toLocaleTimeString('pt-BR')}`;
+    const sufixoIgnoradas = LINHAS_IGNORADAS.length
+      ? ` · ⚠ ${LINHAS_IGNORADAS.length} linha(s) da planilha ignorada(s)`
+      : '';
+    if(statusEl) statusEl.textContent = `Atualizado às ${ultimaAtualizacao.toLocaleTimeString('pt-BR')}${sufixoIgnoradas}`;
   } catch(err){
     console.error('Erro ao carregar planilhas:', err);
     if(statusEl) statusEl.textContent = 'Erro ao buscar dados — tentando de novo em breve';
@@ -611,6 +651,25 @@ function calcularProximosASair(porFamiliaLimite){
   return porFamilia;
 }
 
+/* Mostra quais linhas da aba Ocupação foram descartadas por dado
+   incompleto e por quê — sem isso, um erro de digitação faz um palete
+   inteiro sumir do painel sem ninguém perceber. */
+function renderLinhasIgnoradas(){
+  const el = document.getElementById('linhasIgnoradasAlerta');
+  if(LINHAS_IGNORADAS.length === 0){ el.innerHTML = ''; return; }
+
+  const itens = LINHAS_IGNORADAS
+    .map(l => `<li>Linha ${l.linha} da aba "Ocupação" — ${escapeHtml(l.motivo)}</li>`)
+    .join('');
+
+  el.innerHTML = `
+    <div class="ignoradas-panel">
+      <span class="ignoradas-title">⚠ ${LINHAS_IGNORADAS.length} linha(s) ignorada(s) na planilha</span>
+      <ul>${itens}</ul>
+    </div>
+  `;
+}
+
 function renderConflitos(){
   const el = document.getElementById('conflitosAlerta');
   if(OCUPACAO_CONFLITOS.length === 0){ el.innerHTML = ''; return; }
@@ -788,6 +847,7 @@ function renderFloorPanel(){
 function renderAll(){
   renderKPIs();
   renderConflitos();
+  renderLinhasIgnoradas();
   renderProximosASair();
   renderAlocacaoSugerida();
   renderFamilyLegend();
