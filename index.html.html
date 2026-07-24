@@ -216,6 +216,19 @@
   .ocupacao-card.critico .oc-pct{ color:#F0998A; }
   .oc-count{ font-size:10.5px; color:var(--text-soft); }
 
+  .grafico-panel{
+    background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
+    padding:16px 20px; margin-bottom:18px;
+  }
+  .grafico-sub{ font-size:11px; color:var(--text-soft); margin:-6px 0 12px; }
+  .grafico-wrap{ position:relative; height:270px; }
+  .grafico-wrap-bar{ height:290px; }
+  .btn-voltar-grafico{
+    background:none; border:none; color:var(--frost); font-size:11.5px; font-weight:600;
+    cursor:pointer; margin:-4px 0 10px; padding:0; text-decoration:underline; font-family:var(--font-body);
+    display:block;
+  }
+
   .estoque-list{ display:flex; flex-direction:column; gap:2px; max-height:360px; overflow-y:auto; }
   .estoque-row{
     display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px;
@@ -439,6 +452,10 @@
 
       <div id="ocupacaoPainel"></div>
 
+      <div id="graficoFamiliasPainel"></div>
+
+      <div id="graficoAgingPainel"></div>
+
       <div id="conflitosAlerta"></div>
 
       <div id="linhasIgnoradasAlerta"></div>
@@ -560,6 +577,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 
 <script>
 /* ======================================================================
@@ -1322,6 +1340,193 @@ function ocupacaoCardHtml(label, ocupados, capacidade){
     <div class="oc-bar-wrap"><div class="oc-bar" style="width:${Math.min(pct,100)}%"></div></div>
     <div class="oc-nums"><span class="oc-pct">${pct}%</span><span class="oc-count">${ocupados}/${capacidade} paletes</span></div>
   </div>`;
+}
+
+/* ======================================================================
+   GRÁFICOS: ocupação por família (com drill-down por produto) e produtos
+   parados há mais tempo. Usam Chart.js, que desenha em <canvas> — por
+   isso não dá pra passar var(--x) direto nas cores do gráfico (canvas
+   não interpreta CSS), precisa ler o valor computado primeiro.
+   ====================================================================== */
+function cssVar(nome){
+  return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+}
+
+let CHART_FAMILIAS = null;
+let CHART_AGING = null;
+let GRAFICO_FAMILIA_ATUAL = null; // null = visão por família; nome da família = drill-down por produto
+
+function calcularOcupacaoPorFamilia(){
+  const porFamilia = {};
+  let total = 0;
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(!r.ocupado || !r.familia) return;
+    porFamilia[r.familia] = (porFamilia[r.familia] || 0) + 1;
+    total++;
+  });
+  return { porFamilia, total };
+}
+
+function calcularProdutosDaFamilia(familia){
+  const porProduto = {};
+  let total = 0;
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(!r.ocupado || r.familia !== familia) return;
+    total++; // conta o palete uma vez, mesmo que ele carregue mais de um produto
+    r.produtos.forEach(p => { porProduto[p] = (porProduto[p] || 0) + 1; });
+  });
+  return { porProduto, total };
+}
+
+function renderGraficoFamilias(){
+  const el = document.getElementById('graficoFamiliasPainel');
+  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
+  if(!window.Chart){ el.innerHTML = '<div class="grafico-panel"><div class="carga-vazio">Gráfico indisponível (sem conexão com a internet).</div></div>'; return; }
+
+  const visaoFamilia = GRAFICO_FAMILIA_ATUAL === null;
+  let labels, valores, cores, totalBase, titulo, subtitulo;
+
+  if(visaoFamilia){
+    const { porFamilia, total } = calcularOcupacaoPorFamilia();
+    labels = Object.keys(porFamilia).sort((a, b) => porFamilia[b] - porFamilia[a]);
+    valores = labels.map(f => porFamilia[f]);
+    cores = labels.map(f => familyColor(f));
+    totalBase = total;
+    titulo = 'Ocupação por família';
+    subtitulo = 'Fatia = % dos paletes ocupados hoje. Clique numa família pra ver os produtos dela.';
+  } else {
+    const { porProduto, total } = calcularProdutosDaFamilia(GRAFICO_FAMILIA_ATUAL);
+    labels = Object.keys(porProduto).sort((a, b) => porProduto[b] - porProduto[a]);
+    valores = labels.map(p => porProduto[p]);
+    cores = labels.map(p => familyColor(p));
+    totalBase = total;
+    titulo = `Produtos da família "${GRAFICO_FAMILIA_ATUAL}"`;
+    subtitulo = 'Paletes mistos contam pra mais de um produto — a soma das fatias pode passar de 100%.';
+  }
+
+  if(labels.length === 0){
+    el.innerHTML = `<div class="grafico-panel"><div class="carga-vazio">Sem dados suficientes pra esse gráfico.</div></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="grafico-panel">
+      <div class="ocupacao-title">${escapeHtml(titulo)}</div>
+      <div class="grafico-sub">${subtitulo}</div>
+      ${!visaoFamilia ? `<button id="btnVoltarFamilias" class="btn-voltar-grafico">&larr; Voltar para famílias</button>` : ''}
+      <div class="grafico-wrap"><canvas id="canvasFamilias"></canvas></div>
+    </div>
+  `;
+
+  if(!visaoFamilia){
+    document.getElementById('btnVoltarFamilias').addEventListener('click', () => {
+      GRAFICO_FAMILIA_ATUAL = null;
+      renderGraficoFamilias();
+    });
+  }
+
+  if(CHART_FAMILIAS) CHART_FAMILIAS.destroy();
+  const ctx = document.getElementById('canvasFamilias').getContext('2d');
+  CHART_FAMILIAS = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: valores, backgroundColor: cores, borderColor: cssVar('--panel'), borderWidth: 2, hoverOffset: 6 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: cssVar('--text-soft'), font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 },
+        },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const pct = totalBase ? Math.round((item.parsed / totalBase) * 100) : 0;
+              return ` ${item.label}: ${pct}% (${item.parsed} palete${item.parsed === 1 ? '' : 's'})`;
+            },
+          },
+        },
+      },
+      onClick: visaoFamilia ? (evt, elementos) => {
+        if(!elementos.length) return;
+        GRAFICO_FAMILIA_ATUAL = labels[elementos[0].index];
+        renderGraficoFamilias();
+      } : undefined,
+      onHover: visaoFamilia ? (evt, elementos) => {
+        evt.native.target.style.cursor = elementos.length ? 'pointer' : 'default';
+      } : undefined,
+    },
+  });
+}
+
+/* Maior quantidade de dias em estoque, por produto — pega o palete mais
+   antigo de cada produto (o "pior caso"), pra apontar pro time comercial
+   o que priorizar na venda antes que fique parado tempo demais. */
+function calcularProdutosMaisAntigos(limite){
+  const porProduto = {};
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(!r.ocupado) return;
+    const dias = diasEmEstoque(r.dataEntrada);
+    if(dias === null) return;
+    r.produtos.forEach(p => {
+      if(porProduto[p] === undefined || dias > porProduto[p]) porProduto[p] = dias;
+    });
+  });
+  return Object.entries(porProduto)
+    .map(([produto, dias]) => ({ produto, dias }))
+    .sort((a, b) => b.dias - a.dias)
+    .slice(0, limite);
+}
+
+function renderGraficoAging(){
+  const el = document.getElementById('graficoAgingPainel');
+  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
+  if(!window.Chart){ el.innerHTML = ''; return; }
+
+  const dados = calcularProdutosMaisAntigos(10);
+  if(dados.length === 0){ el.innerHTML = ''; return; }
+
+  el.innerHTML = `
+    <div class="grafico-panel">
+      <div class="ocupacao-title">Produtos parados há mais tempo</div>
+      <div class="grafico-sub">Palete mais antigo de cada produto — indicador pro time comercial priorizar venda/giro.</div>
+      <div class="grafico-wrap grafico-wrap-bar"><canvas id="canvasAging"></canvas></div>
+    </div>
+  `;
+
+  const labels = dados.map(d => d.produto);
+  const valores = dados.map(d => d.dias);
+  const cores = valores.map(d => d >= 30 ? cssVar('--red') : d >= 15 ? cssVar('--extra') : cssVar('--frost'));
+
+  if(CHART_AGING) CHART_AGING.destroy();
+  const ctx = document.getElementById('canvasAging').getContext('2d');
+  CHART_AGING = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: valores, backgroundColor: cores, borderRadius: 4, maxBarThickness: 22 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => ` ${item.parsed.x} dia(s) em estoque` } },
+      },
+      scales: {
+        x: {
+          ticks: { color: cssVar('--text-soft'), font: { family: 'Inter', size: 10.5 } },
+          grid: { color: cssVar('--ice-line') },
+          title: { display: true, text: 'Dias em estoque', color: cssVar('--text-soft'), font: { family: 'Inter', size: 10.5 } },
+        },
+        y: {
+          ticks: { color: cssVar('--text'), font: { family: 'Inter', size: 10.5 } },
+          grid: { display: false },
+        },
+      },
+    },
+  });
 }
 
 function renderOcupacaoPainel(){
@@ -2256,6 +2461,8 @@ function renderFloorPanel(){
 function renderAll(){
   renderKPIs();
   renderOcupacaoPainel();
+  renderGraficoFamilias();
+  renderGraficoAging();
   renderConflitos();
   renderLinhasIgnoradas();
   renderProximosASair();
