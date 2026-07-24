@@ -412,7 +412,7 @@
 
       <div class="busca-row">
         <span class="busca-ico">🔍</span>
-        <input type="text" id="buscaProduto" class="busca-input" placeholder="Buscar produto…" autocomplete="off">
+        <input type="text" id="buscaProduto" class="busca-input" placeholder="Buscar por nome ou código…" autocomplete="off">
         <button id="btnLimparBusca" class="btn-limpar-busca" style="display:none;" title="Limpar busca">✕</button>
       </div>
 
@@ -452,7 +452,7 @@
       <div class="carga-panel-title">📦 Produtos em estoque</div>
       <div class="busca-row">
         <span class="busca-ico">🔍</span>
-        <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar produto…" autocomplete="off">
+        <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar por nome ou código…" autocomplete="off">
       </div>
       <div class="carga-dica">Toque num produto (ou arraste, no computador) pra adicionar 1 palete à carga.</div>
       <div id="listaProdutosCarga" class="carga-produtos-lista"></div>
@@ -621,7 +621,19 @@ let ENTRADA_VAGAS = [];        // posições sugeridas calculadas pro lote atual
 function produtoCombina(produtos){
   if(!FILTRO_PRODUTO) return true;
   if(!produtos || produtos.length === 0) return false;
-  return produtos.some(p => p.toLowerCase().includes(FILTRO_PRODUTO));
+
+  const buscaSoDigitos = /^\d+$/.test(FILTRO_PRODUTO);
+  const filtroSemZeros = FILTRO_PRODUTO.replace(/^0+/, '');
+
+  return produtos.some(p => {
+    if(p.toLowerCase().includes(FILTRO_PRODUTO)) return true;
+    const codigo = codigoDoProduto(p);
+    if(!codigo) return false;
+    if(codigo.toLowerCase().includes(FILTRO_PRODUTO)) return true;
+    // tolera zero à esquerda que o Google Sheets costuma comer (ex: "007306" -> "7306")
+    if(buscaSoDigitos && filtroSemZeros && codigo.replace(/^0+/, '') === filtroSemZeros) return true;
+    return false;
+  });
 }
 
 /* Parser simples de CSV (respeita campos entre aspas com vírgula dentro) */
@@ -1409,6 +1421,14 @@ function familiaDoProduto(produto){
 
 /* Lista de todos os produtos em estoque agora, com quantidade disponível,
    já aplicando o filtro de busca da própria aba Montar Carga. */
+/* Acha o código (catálogo CIGAM) de um produto pelo nome exato — usado
+   pra deixar a busca da Montar Carga também aceitar código, já que o
+   estoque em si (aba CAMARA 1) só guarda o nome do produto. */
+function codigoDoProduto(produto){
+  const achado = PRODUTOS_CATALOGO.find(p => p.descricao === produto);
+  return achado ? achado.codigo : '';
+}
+
 function listaProdutosDisponiveis(){
   const porProduto = {};
   OCUPACAO_REGISTROS.forEach(r=>{
@@ -1417,8 +1437,21 @@ function listaProdutosDisponiveis(){
       porProduto[p] = (porProduto[p] || 0) + 1;
     });
   });
+
+  const buscaSoDigitos = /^\d+$/.test(FILTRO_CARGA);
+  const filtroSemZeros = FILTRO_CARGA.replace(/^0+/, '');
+
   return Object.keys(porProduto)
-    .filter(p => !FILTRO_CARGA || p.toLowerCase().includes(FILTRO_CARGA))
+    .filter(p => {
+      if(!FILTRO_CARGA) return true;
+      if(p.toLowerCase().includes(FILTRO_CARGA)) return true;
+      const codigo = codigoDoProduto(p);
+      if(!codigo) return false;
+      if(codigo.toLowerCase().includes(FILTRO_CARGA)) return true;
+      // tolera zero à esquerda que o Google Sheets costuma comer (ex: "007306" -> "7306")
+      if(buscaSoDigitos && filtroSemZeros && codigo.replace(/^0+/, '') === filtroSemZeros) return true;
+      return false;
+    })
     .map(p => ({ produto: p, disponivel: porProduto[p], familia: familiaDoProduto(p) }))
     .sort((a,b) => a.produto.localeCompare(b.produto, 'pt-BR'));
 }
