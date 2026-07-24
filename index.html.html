@@ -480,6 +480,7 @@
         <button id="btnGerarPdf" class="btn-sync">📄 Gerar PDF da carga</button>
         <button id="btnConfirmarCarga" class="btn-sync btn-confirmar">✅ Confirmar carga retirada</button>
       </div>
+      <button id="btnReimprimirPdf" class="btn-sync btn-secundario" style="display:none;margin-bottom:14px;">🖨 Reimprimir PDF da última carga confirmada</button>
       <div class="carga-aviso">⚠ "Confirmar carga retirada" registra a DATA SAÍDA de hoje direto na planilha (via Apps Script) e libera as posições no mapa. Só use depois que os paletes já tiverem saído fisicamente da câmara.</div>
     </div>
 
@@ -537,6 +538,7 @@
 <div class="tip" id="tip"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 
 <script>
 /* ======================================================================
@@ -608,6 +610,7 @@ let FILTRO_PRODUTO = '';       // texto de busca (minúsculo, sem espaço nas po
 let OCUPACAO_VISAO = 'camara'; // 'camara' | 'rua' | 'andar' — modo do painel de ocupação
 let FILTRO_CARGA = '';         // texto de busca — aba Montar Carga
 let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montagem (só em memória, não mexe na planilha)
+let ULTIMA_CARGA_CONFIRMADA = null; // retrato da última carga confirmada, pra poder reimprimir o PDF depois
 
 let PRODUTOS_CATALOGO = [];    // [{ codigo, descricao }] — catálogo oficial vindo do CIGAM (aba "Produtos")
 let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada
@@ -1597,68 +1600,132 @@ function renderCargaTudo(){
   if(revisao) revisao.innerHTML = ''; // a carga mudou, qualquer revisão pendente ficou desatualizada
 }
 
-/* Gera o romaneio em PDF: pra cada produto da carga, lista os paletes
-   exatos (endereço completo) que devem ser retirados, seguindo FIFO.
-   Esse PDF é o que vai impresso pro operador de empilhadeira. */
-function gerarPDFCarga(){
-  if(CARGA_ITENS.length === 0) return;
-  if(!window.jspdf){
+/* Monta a estrutura de dados do romaneio (produto + paletes exatos que
+   atendem aquela quantidade), sem desenhar nada ainda. Separado da função
+   de desenho porque precisa ser "congelado" no momento da confirmação —
+   depois que a carga é confirmada, o estoque muda, e recalcular do zero
+   ia dar endereços diferentes (ou nenhum) do que realmente foi retirado. */
+function construirEstruturaPdf(itensCarga){
+  return itensCarga.map(item => ({
+    produto: item.produto,
+    paletes: selecionarPaletesParaProduto(item.produto, item.quantidade),
+  }));
+}
+
+/* Desenha o romaneio em PDF a partir de uma estrutura já pronta (ver
+   construirEstruturaPdf). Usa jspdf-autotable pra sair como tabela de
+   verdade — alinhada, com cabeçalho e sem depender de espaçamento manual
+   por texto solto. Evita emoji no PDF (a fonte padrão do jsPDF não
+   suporta e vira caractere quebrado); avisos usam texto + cor em vez
+   disso. */
+function renderizarPdfRomaneio(estrutura){
+  if(!estrutura || estrutura.length === 0) return;
+  if(!window.jspdf || !window.jspdf.jsPDF){
     alert('Não foi possível carregar a biblioteca de PDF (sem conexão com a internet?). Tente novamente.');
     return;
   }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const margemX = 15;
-  let y = 18;
   const agora = new Date();
+  const margemX = 14;
+  const larguraUtil = 210 - margemX * 2;
+  let y = 18;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(15);
-  doc.text('Romaneio de Carga — Câmara Fria', margemX, y);
-  y += 7;
+  doc.setFontSize(16);
+  doc.setTextColor(20, 20, 20);
+  doc.text('Romaneio de Carga - Camara Fria', margemX, y);
+
+  y += 6;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(90);
-  doc.text(`Gerado em ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR')} · Bread King`, margemX, y);
-  y += 9;
-  doc.setDrawColor(200);
-  doc.line(margemX, y, 195, y);
-  y += 8;
-  doc.setTextColor(20);
+  doc.setFontSize(9);
+  doc.setTextColor(110, 110, 110);
+  doc.text(`Bread King   -   Gerado em ${agora.toLocaleDateString('pt-BR')} as ${agora.toLocaleTimeString('pt-BR')}`, margemX, y);
 
-  CARGA_ITENS.forEach(item=>{
-    const paletes = selecionarPaletesParaProduto(item.produto, item.quantidade);
+  y += 4;
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(margemX, y, margemX + larguraUtil, y);
 
-    if(y > 268){ doc.addPage(); y = 18; }
+  y += 7;
+  const totalPaletes = estrutura.reduce((s, item) => s + item.paletes.length, 0);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(40, 40, 40);
+  doc.text(`Total da carga: ${totalPaletes} palete(s)  -  ${estrutura.length} produto(s) diferente(s)`, margemX, y);
+  y += 6;
 
+  estrutura.forEach(item => {
+    if(y > 258){ doc.addPage(); y = 18; }
+
+    // faixa de título da seção (fundo escuro, nome do produto + contagem)
+    doc.setFillColor(19, 32, 41);
+    doc.rect(margemX, y, larguraUtil, 7.5, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text(`${item.produto} — ${item.quantidade} palete${item.quantidade===1?'':'s'}`, margemX, y);
-    y += 6.5;
-
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    paletes.forEach((p, idx)=>{
-      if(y > 275){ doc.addPage(); y = 18; }
-      const ladoTxt = p.lado === 'U' ? '' : ` · Lado ${p.lado}`;
-      const endereco = `Rua ${p.rua}${ladoTxt} · Andar ${p.andar} · Posição ${String(p.posicao).padStart(2,'0')} · Palete ${p.palete}`;
-      doc.text(`${idx+1}. ${endereco}`, margemX + 4, y);
-      y += 5.5;
-      if(p.produtos.length > 1){
-        doc.setFontSize(8.5);
-        doc.setTextColor(120);
-        const outros = p.produtos.filter(x => x !== item.produto);
-        doc.text(`⚠ palete misto — também contém: ${outros.join(', ')}`, margemX + 8, y);
-        y += 5;
-        doc.setFontSize(10);
-        doc.setTextColor(20);
-      }
+    doc.setTextColor(255, 255, 255);
+    doc.text(item.produto, margemX + 2.5, y + 5.2);
+    doc.setFontSize(8.5);
+    doc.text(`${item.paletes.length} palete(s)`, margemX + larguraUtil - 2.5, y + 5.2, { align: 'right' });
+    y += 7.5;
+
+    const linhas = item.paletes.map((p, i) => {
+      const ladoTxt = p.lado === 'U' ? '' : ` Lado ${p.lado}`;
+      const endereco = `Rua ${p.rua}${ladoTxt}  ·  Andar ${p.andar}  ·  Posicao ${String(p.posicao).padStart(2, '0')}  ·  Palete ${p.palete}`;
+      const outros = p.produtos.filter(x => x !== item.produto);
+      const obs = outros.length ? `PALETE MISTO - tambem contem: ${outros.join(', ')}` : '';
+      return [String(i + 1), endereco, obs];
     });
-    y += 4;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margemX, right: margemX },
+      head: [['#', 'Endereco', 'Observacao']],
+      body: linhas,
+      theme: 'grid',
+      styles: { font: 'helvetica', fontSize: 9, cellPadding: 2.2, textColor: [30, 30, 30], lineColor: [215, 215, 215], lineWidth: 0.2 },
+      headStyles: { fillColor: [235, 235, 235], textColor: [50, 50, 50], fontStyle: 'bold', fontSize: 8.5 },
+      columnStyles: {
+        0: { cellWidth: 9, halign: 'center' },
+        1: { cellWidth: 105 },
+        2: { cellWidth: larguraUtil - 9 - 105, textColor: [175, 95, 20], fontStyle: 'bold', fontSize: 7.8 },
+      },
+    });
+
+    y = doc.lastAutoTable.finalY + 6;
   });
 
-  const nomeArquivo = `romaneio_carga_${agora.toISOString().slice(0,10)}_${String(agora.getHours()).padStart(2,'0')}${String(agora.getMinutes()).padStart(2,'0')}.pdf`;
+  // espaço de assinatura no fim do documento
+  if(y > 250){ doc.addPage(); y = 18; }
+  y += 4;
+  doc.setDrawColor(180, 180, 180);
+  doc.line(margemX, y, margemX + 75, y);
+  doc.line(margemX + 105, y, margemX + larguraUtil, y);
+  y += 4;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(110, 110, 110);
+  doc.text('Operador de empilhadeira', margemX, y);
+  doc.text('Horario da retirada', margemX + 105, y);
+
+  // numeração de página em todas as páginas geradas
+  const totalPaginas = doc.internal.getNumberOfPages();
+  for(let p = 1; p <= totalPaginas; p++){
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Pagina ${p} de ${totalPaginas}`, 210 - margemX, 290, { align: 'right' });
+  }
+
+  const nomeArquivo = `romaneio_carga_${agora.toISOString().slice(0,10)}_${String(agora.getHours()).padStart(2, '0')}${String(agora.getMinutes()).padStart(2, '0')}.pdf`;
   doc.save(nomeArquivo);
+}
+
+function gerarPDFCarga(){
+  if(CARGA_ITENS.length === 0) return;
+  renderizarPdfRomaneio(construirEstruturaPdf(CARGA_ITENS));
 }
 
 /* Manda a carga montada pro Apps Script, que preenche a DATA SAÍDA de hoje
@@ -1795,6 +1862,13 @@ async function enviarConfirmacaoCarga(paletes){
     } else {
       alert(`✅ ${resultado.resultados.length} palete(s) processados! A planilha já foi atualizada.`);
     }
+
+    // guarda um retrato exato do que foi confirmado — depois que a
+    // planilha for resincronizada (carregarDados, logo abaixo) o estoque
+    // já vai estar diferente, então recalcular do zero não serviria mais
+    // pra reimprimir o mesmo romaneio
+    ULTIMA_CARGA_CONFIRMADA = construirEstruturaPdf(CARGA_ITENS);
+    document.getElementById('btnReimprimirPdf').style.display = '';
 
     CARGA_ITENS = [];
     renderCargaTudo();
@@ -2122,6 +2196,9 @@ function inicializarAbaCarga(){
   document.getElementById('btnLimparCarga').addEventListener('click', limparCarga);
   document.getElementById('btnGerarPdf').addEventListener('click', gerarPDFCarga);
   document.getElementById('btnConfirmarCarga').addEventListener('click', confirmarCargaRetirada);
+  document.getElementById('btnReimprimirPdf').addEventListener('click', ()=>{
+    if(ULTIMA_CARGA_CONFIRMADA) renderizarPdfRomaneio(ULTIMA_CARGA_CONFIRMADA);
+  });
 
   renderCargaTudo();
 }
