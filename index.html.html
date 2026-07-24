@@ -61,15 +61,6 @@
   .brand-block h1{ margin:0; font-family:var(--font-display); font-size:29px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
   .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:normal; }
 
-  .temp-badge{
-    display:flex; align-items:center; gap:10px;
-    background:var(--panel); border:1px solid var(--ice-line); border-left:3px solid var(--brand); border-radius:8px;
-    padding:10px 18px;
-  }
-  .temp-badge .ico{ font-size:22px; }
-  .temp-badge .val{ font-size:20px; font-weight:800; color:var(--frost); font-family:var(--font-mono); }
-  .temp-badge .lbl{ font-size:10px; color:var(--text-soft); text-transform:uppercase; letter-spacing:1px; }
-
   .container{ max-width:1400px; margin:0 auto; padding:26px 28px 60px; }
 
   /* Painel elevador: seletor de andar, estilo painel de controle */
@@ -287,15 +278,26 @@
 
   footer{ text-align:center; font-size:11px; color:var(--text-soft); padding:20px; }
 
-  .view-tabs{ background:var(--panel); border-bottom:1px solid var(--ice-line); }
-  .view-tabs-inner{ max-width:1400px; margin:0 auto; padding:0 24px; display:flex; gap:4px; }
-  .view-tab{
-    background:none; border:none; border-bottom:3px solid transparent; color:var(--text-soft);
-    font-family:var(--font-display); font-size:13px; font-weight:600; letter-spacing:0.3px;
-    text-transform:uppercase; padding:14px 18px 11px; cursor:pointer;
+  .app-shell{ display:flex; min-height:100vh; align-items:stretch; }
+  .app-main{ flex:1; min-width:0; }
+
+  .side-nav{
+    width:220px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--ice-line);
+    display:flex; flex-direction:column; padding:22px 0; position:sticky; top:0; height:100vh; overflow-y:auto;
   }
-  .view-tab:hover{ color:var(--text); }
-  .view-tab.active{ color:var(--brand); border-bottom-color:var(--brand); }
+  .side-nav-brand{ padding:0 22px 20px; border-bottom:1px solid var(--ice-line); margin-bottom:10px; }
+  .side-nav-brand .eyebrow{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--brand); font-weight:600; margin-bottom:3px;
+  }
+  .side-nav-title{ font-family:var(--font-display); font-size:16px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text); }
+  .side-nav-btn{
+    background:none; border:none; border-left:3px solid transparent; text-align:left; color:var(--text-soft);
+    font-family:var(--font-display); font-size:13px; font-weight:500; letter-spacing:0.3px;
+    text-transform:uppercase; padding:13px 22px; cursor:pointer;
+  }
+  .side-nav-btn:hover{ color:var(--text); background:var(--bg-soft); }
+  .side-nav-btn.active{ color:var(--brand); border-left-color:var(--brand); background:var(--bg-soft); font-weight:600; }
 
   .carga-layout{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
   .carga-col-produtos{ flex:1 1 320px; min-width:280px; }
@@ -411,38 +413,37 @@
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-inner">
-    <div class="brand-block">
-      <div class="eyebrow">Bread King · Logística</div>
-      <h1>Planta da Câmara Fria</h1>
-      <div class="subtitle">Mapa de endereçamento por rua e andar</div>
+<div class="app-shell">
+
+  <nav class="side-nav">
+    <div class="side-nav-brand">
+      <div class="eyebrow">Bread King</div>
+      <div class="side-nav-title">Logística</div>
     </div>
-    <div class="temp-badge">
-      <span class="ico">❄️</span>
-      <div>
-        <div class="val">-18°C</div>
-        <div class="lbl">Câmara fria</div>
+    <button class="side-nav-btn active" id="tabMapa" data-view="mapa">Câmara Fria</button>
+    <button class="side-nav-btn" id="tabCarga" data-view="carga">Saída de Produto</button>
+    <button class="side-nav-btn" id="tabEntrada" data-view="entrada">Entrada de Produto</button>
+  </nav>
+
+  <div class="app-main">
+
+    <div class="topbar">
+      <div class="topbar-inner">
+        <div class="brand-block">
+          <div class="eyebrow">Bread King · Logística</div>
+          <h1>Planta da Câmara Fria</h1>
+          <div class="subtitle">Mapa de endereçamento por rua e andar</div>
+        </div>
       </div>
     </div>
-  </div>
-</div>
 
-<div class="view-tabs">
-  <div class="view-tabs-inner">
-    <button class="view-tab active" id="tabMapa" data-view="mapa">🗺️ Planta da Câmara</button>
-    <button class="view-tab" id="tabCarga" data-view="carga">🚛 Montar Carga</button>
-    <button class="view-tab" id="tabEntrada" data-view="entrada">📥 Nova Entrada</button>
-  </div>
-</div>
+    <div id="viewMapa" class="container">
+      <div class="layout">
 
-<div id="viewMapa" class="container">
-  <div class="layout">
-
-    <div class="floor-panel" id="floorPanel">
-      <div class="fp-label">Andar</div>
-      <!-- botões gerados via JS, do 4 (topo) ao 1 (base), como um painel de elevador -->
-    </div>
+        <div class="floor-panel" id="floorPanel">
+          <div class="fp-label">Andar</div>
+          <!-- botões gerados via JS, do 4 (topo) ao 1 (base), como um painel de elevador -->
+        </div>
 
     <div class="content">
 
@@ -468,6 +469,8 @@
       <div id="conflitosAlerta"></div>
 
       <div id="linhasIgnoradasAlerta"></div>
+
+      <div id="posicoes01Alerta"></div>
 
       <div id="proximosASair"></div>
 
@@ -582,7 +585,10 @@
 </div>
 
 <footer>Planta de Endereçamento · Câmara Fria · Bread King</footer>
-<div class="tip" id="tip"></div>
+    <div class="tip" id="tip"></div>
+
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
@@ -651,6 +657,7 @@ const APPS_SCRIPT_TOKEN = 'bk-camara-2026-x7';               // mesma senha do C
 
 let OCUPACAO_REGISTROS = [];   // todas as linhas válidas da aba Ocupação
 let LINHAS_IGNORADAS = [];     // linhas da aba Ocupação descartadas por dado incompleto (linha + motivo)
+let POSICOES_01_INVALIDAS = []; // posições 01 (só cabe 1 palete) que têm um P2 cadastrado por engano
 let OCUPACAO_MAP = {};         // key = código da posição (igual ao cellCode) -> registro ocupado
 let FAMILIAS_CATALOGO = [];    // linhas da aba Famílias
 let ultimaAtualizacao = null;
@@ -839,6 +846,11 @@ async function carregarDados(){
         OCUPACAO_CONFLITOS_SET.add(key);
       }
     });
+
+    // posição 01 de cada andar/frente só comporta 1 palete fisicamente —
+    // se tiver um P2 cadastrado ali (dado de antes dessa regra existir),
+    // aponta pra corrigir na planilha em vez de só esconder no mapa
+    POSICOES_01_INVALIDAS = OCUPACAO_REGISTROS.filter(r => r.ocupado && r.posicao === 1 && r.palete === '2');
 
     ultimaAtualizacao = new Date();
     const sufixoIgnoradas = LINHAS_IGNORADAS.length
@@ -1115,6 +1127,28 @@ function renderLinhasIgnoradas(){
   el.innerHTML = `
     <div class="ignoradas-panel">
       <span class="ignoradas-title">${LINHAS_IGNORADAS.length} linha(s) ignorada(s) na planilha</span>
+      <ul>${itens}</ul>
+    </div>
+  `;
+}
+
+/* A posição 01 de cada rua/lado/andar só tem espaço físico pra 1 palete
+   (P1). Se algum registro de P2 existir ali — geralmente dado lançado
+   antes dessa regra estar configurada no sistema — o mapa mostra as duas
+   caixas de propósito (não esconde), e esse painel lista o endereço
+   exato pra corrigir na planilha (mover o palete pra uma posição real). */
+function renderPosicoes01Invalidas(){
+  const el = document.getElementById('posicoes01Alerta');
+  if(POSICOES_01_INVALIDAS.length === 0){ el.innerHTML = ''; return; }
+
+  const itens = POSICOES_01_INVALIDAS.map(r => {
+    const ladoTxt = r.lado === 'U' ? '' : ` Lado ${escapeHtml(r.lado)}`;
+    return `<li>Rua ${r.rua}${ladoTxt} · Andar ${r.andar} · Posição 01-P2 — ${escapeHtml(r.familia || 'sem família')}${r.produtos.length ? ' · ' + escapeHtml(r.produtos.join(', ')) : ''}</li>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="ignoradas-panel">
+      <span class="ignoradas-title">${POSICOES_01_INVALIDAS.length} posição(ões) 01 com um 2º palete indevido</span>
       <ul>${itens}</ul>
     </div>
   `;
@@ -2669,6 +2703,7 @@ function renderAll(){
   renderGraficoHistorico();
   renderConflitos();
   renderLinhasIgnoradas();
+  renderPosicoes01Invalidas();
   renderProximosASair();
   renderAlocacaoSugerida();
   renderEstoquePorProduto();
