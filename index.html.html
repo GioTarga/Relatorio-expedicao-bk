@@ -612,6 +612,7 @@ let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montage
 let PRODUTOS_CATALOGO = [];    // [{ codigo, descricao }] — catálogo oficial vindo do CIGAM (aba "Produtos")
 let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada
 let ENTRADA_PRODUTO = null;    // descrição do produto selecionado na Nova Entrada
+let ENTRADA_PRODUTO_CODIGO = ''; // código do produto selecionado (catálogo CIGAM)
 let ENTRADA_QTD = 1;
 let ENTRADA_VAGAS = [];        // posições sugeridas calculadas pro lote atual
 
@@ -1181,11 +1182,17 @@ function calcularAlocacaoPorFamilia(){
       return { familia, rua: alvo.rua, lado: alvo.lado, andar: alvo.andarAlvo, vaga: alvo.vaga, livres: alvo.livresAndar, cheio: false, novaRua: false };
     }
 
-    // todas as ruas onde a família já está estão cheias — procura uma rua
-    // totalmente livre (nenhuma família ainda) pra abrir
-    const ruaLivre = Object.values(status).find(s => !s.temAlgumaFamilia && s.andarAlvo !== null);
-    if(ruaLivre){
-      return { familia, rua: ruaLivre.rua, lado: ruaLivre.lado, andar: ruaLivre.andarAlvo, vaga: ruaLivre.vaga, livres: ruaLivre.livresAndar, cheio: false, novaRua: true };
+    // todas as ruas onde a família já está estão cheias — procura outra
+    // rua com vaga. Prioriza uma totalmente livre (nenhuma família ainda);
+    // se não existir nenhuma assim (câmara cheia de famílias em toda parte),
+    // usa a que tiver mais espaço livre mesmo que já tenha outra família —
+    // sem isso, uma família nova nunca conseguiria entrar numa câmara onde
+    // toda rua já tem algum produto, mesmo sobrando espaço físico de verdade.
+    const comVaga = Object.values(status).filter(s => s.andarAlvo !== null);
+    const ruaVirgem = comVaga.find(s => !s.temAlgumaFamilia);
+    const ruaEscolhida = ruaVirgem || comVaga.sort((a, b) => b.livresTotal - a.livresTotal)[0];
+    if(ruaEscolhida){
+      return { familia, rua: ruaEscolhida.rua, lado: ruaEscolhida.lado, andar: ruaEscolhida.andarAlvo, vaga: ruaEscolhida.vaga, livres: ruaEscolhida.livresAndar, cheio: false, novaRua: true };
     }
 
     return { familia, cheio: true };
@@ -1822,11 +1829,17 @@ function sugerirVagasParaEntrada(familia, quantidade){
         .sort((a, b) => a.livresTotal - b.livresTotal);
       if(candidatas.length) alvo = candidatas[0];
 
-      // 2) senão, abre uma rua totalmente livre (nenhuma família ainda)
+      // 2) senão, abre em outra rua com vaga — prioriza uma totalmente
+      // livre (nenhuma família ainda); se não existir nenhuma assim, usa
+      // a que tiver mais espaço livre mesmo que já tenha outra família,
+      // pra uma família nova sempre conseguir entrar quando sobra espaço
+      // físico em algum lugar da câmara
       if(!alvo){
         const todas = [];
         RUAS.forEach(rua => rua.lados.forEach(lado => todas.push(statusRuaLado(rua.numero, lado))));
-        alvo = todas.find(s => !s.temAlgumaFamilia && s.andarAlvo !== null) || null;
+        const comVaga = todas.filter(s => s.andarAlvo !== null);
+        const virgem = comVaga.find(s => !s.temAlgumaFamilia);
+        alvo = virgem || comVaga.sort((a, b) => b.livresTotal - a.livresTotal)[0] || null;
       }
 
       if(!alvo) break; // não sobrou vaga em lugar nenhum pra essa família
@@ -1912,6 +1925,7 @@ function familiaEntradaEscolhida(){
 
 function selecionarProdutoEntrada(descricao){
   ENTRADA_PRODUTO = descricao;
+  ENTRADA_PRODUTO_CODIGO = (PRODUTOS_CATALOGO.find(p => p.descricao === descricao) || {}).codigo || '';
   ENTRADA_QTD = 1;
   ENTRADA_VAGAS = [];
   document.getElementById('entradaSelecionado').textContent = `Produto selecionado: ${descricao}`;
@@ -1977,7 +1991,7 @@ async function confirmarEntrada(){
         token: APPS_SCRIPT_TOKEN,
         acao: 'entrada',
         entradas: ENTRADA_VAGAS.map(v => ({
-          familia, produto: ENTRADA_PRODUTO,
+          familia, produto: ENTRADA_PRODUTO, codigo: ENTRADA_PRODUTO_CODIGO,
           rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
           dataProducao: dataProducaoBR, dataEntrada: dataBR,
         })),
@@ -1990,7 +2004,9 @@ async function confirmarEntrada(){
       return;
     }
 
-    alert(`✅ ${resultado.linhas} palete(s) registrados na planilha!`);
+    let msg = `✅ ${resultado.linhas} palete(s) registrados na planilha!`;
+    if(resultado.avisoFamilias) msg += `\n\n⚠ ${resultado.avisoFamilias}`;
+    alert(msg);
     ENTRADA_PRODUTO = null;
     ENTRADA_QTD = 1;
     ENTRADA_VAGAS = [];
