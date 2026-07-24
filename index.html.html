@@ -225,6 +225,11 @@
   .grafico-wrap-bar{ height:290px; }
   .grafico-filtros{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
   .grafico-filtros .entrada-select{ width:auto; min-width:200px; flex:1; }
+  .hist-toggle-exemplo{
+    display:flex; align-items:center; gap:7px; font-size:11px; color:var(--text-soft);
+    margin-bottom:12px; cursor:pointer; user-select:none;
+  }
+  .hist-toggle-exemplo input{ accent-color:var(--frost); cursor:pointer; }
   .btn-voltar-grafico{
     background:none; border:none; color:var(--frost); font-size:11.5px; font-weight:600;
     cursor:pointer; margin:-4px 0 10px; padding:0; text-decoration:underline; font-family:var(--font-body);
@@ -582,6 +587,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 
 <script>
 /* ======================================================================
@@ -1356,6 +1362,14 @@ function cssVar(nome){
   return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
 }
 
+/* Paleta própria pros gráficos — tons vermelho/dourado da marca, em vez
+   da cor por hash usada no mapa (lá a prioridade é diferenciar família
+   visualmente; aqui a prioridade é ficar visivelmente "Bread King"). */
+const PALETA_GRAFICO = ['#8B1F24', '#D9A441', '#C97A2B', '#B4552A', '#5C1518', '#E0B96B', '#6B3A1E', '#A83A2F', '#8A6B2B', '#4E1114'];
+function corDoGrafico(indice){
+  return PALETA_GRAFICO[indice % PALETA_GRAFICO.length];
+}
+
 let CHART_FAMILIAS = null;
 let CHART_AGING = null;
 let GRAFICO_FAMILIA_ATUAL = null; // null = visão por família; nome da família = drill-down por produto
@@ -1394,7 +1408,6 @@ function renderGraficoFamilias(){
     const { porFamilia, total } = calcularOcupacaoPorFamilia();
     labels = Object.keys(porFamilia).sort((a, b) => porFamilia[b] - porFamilia[a]);
     valores = labels.map(f => porFamilia[f]);
-    cores = labels.map(f => familyColor(f));
     totalBase = total;
     titulo = 'Ocupação por família';
     subtitulo = 'Fatia = % dos paletes ocupados hoje. Clique numa família pra ver os produtos dela.';
@@ -1402,7 +1415,6 @@ function renderGraficoFamilias(){
     const { porProduto, total } = calcularProdutosDaFamilia(GRAFICO_FAMILIA_ATUAL);
     labels = Object.keys(porProduto).sort((a, b) => porProduto[b] - porProduto[a]);
     valores = labels.map(p => porProduto[p]);
-    cores = labels.map(p => familyColor(p));
     totalBase = total;
     titulo = `Produtos da família "${GRAFICO_FAMILIA_ATUAL}"`;
     subtitulo = 'Paletes mistos contam pra mais de um produto — a soma das fatias pode passar de 100%.';
@@ -1412,6 +1424,8 @@ function renderGraficoFamilias(){
     el.innerHTML = `<div class="grafico-panel"><div class="carga-vazio">Sem dados suficientes pra esse gráfico.</div></div>`;
     return;
   }
+
+  cores = labels.map((_, i) => corDoGrafico(i));
 
   el.innerHTML = `
     <div class="grafico-panel">
@@ -1433,6 +1447,7 @@ function renderGraficoFamilias(){
   const ctx = document.getElementById('canvasFamilias').getContext('2d');
   CHART_FAMILIAS = new Chart(ctx, {
     type: 'doughnut',
+    plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
     data: {
       labels,
       datasets: [{ data: valores, backgroundColor: cores, borderColor: cssVar('--panel'), borderWidth: 2, hoverOffset: 6 }],
@@ -1441,31 +1456,24 @@ function renderGraficoFamilias(){
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          position: 'right',
-          labels: {
-            color: cssVar('--text-soft'), font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10,
-            generateLabels: (chart) => {
-              const dataset = chart.data.datasets[0];
-              return chart.data.labels.map((label, i) => {
-                const valor = dataset.data[i];
-                const pct = totalBase ? Math.round((valor / totalBase) * 100) : 0;
-                return {
-                  text: `${label} — ${pct}%`,
-                  fillStyle: dataset.backgroundColor[i],
-                  strokeStyle: dataset.backgroundColor[i],
-                  index: i,
-                };
-              });
-            },
-          },
-        },
+        legend: { display: false },
         tooltip: {
           callbacks: {
             label: (item) => {
               const pct = totalBase ? Math.round((item.parsed / totalBase) * 100) : 0;
               return ` ${item.label}: ${pct}% (${item.parsed} palete${item.parsed === 1 ? '' : 's'})`;
             },
+          },
+        },
+        datalabels: {
+          color: '#fff',
+          font: { family: 'Inter', weight: '700', size: 11 },
+          textAlign: 'center',
+          display: 'auto', // esconde sozinho os rótulos que não couberem, em vez de empilhar
+          formatter: (valor, contexto) => {
+            const pct = totalBase ? Math.round((valor / totalBase) * 100) : 0;
+            const nome = contexto.chart.data.labels[contexto.dataIndex];
+            return `${nome}\n${pct}%`;
           },
         },
       },
@@ -1485,17 +1493,19 @@ function renderGraficoFamilias(){
    antigo de cada produto (o "pior caso"), pra apontar pro time comercial
    o que priorizar na venda antes que fique parado tempo demais. */
 function calcularProdutosMaisAntigos(limite){
-  const porProduto = {};
+  const porProduto = {}; // produto -> { dias (do palete mais antigo), paletes (quantos tem no total) }
   OCUPACAO_REGISTROS.forEach(r => {
     if(!r.ocupado) return;
     const dias = diasEmEstoque(r.dataEntrada);
-    if(dias === null) return;
     r.produtos.forEach(p => {
-      if(porProduto[p] === undefined || dias > porProduto[p]) porProduto[p] = dias;
+      if(!porProduto[p]) porProduto[p] = { dias: -1, paletes: 0 };
+      porProduto[p].paletes++;
+      if(dias !== null && dias > porProduto[p].dias) porProduto[p].dias = dias;
     });
   });
   return Object.entries(porProduto)
-    .map(([produto, dias]) => ({ produto, dias }))
+    .filter(([, v]) => v.dias >= 0)
+    .map(([produto, v]) => ({ produto, dias: v.dias, paletes: v.paletes }))
     .sort((a, b) => b.dias - a.dias)
     .slice(0, limite);
 }
@@ -1524,17 +1534,36 @@ function renderGraficoAging(){
   const ctx = document.getElementById('canvasAging').getContext('2d');
   CHART_AGING = new Chart(ctx, {
     type: 'bar',
+    plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
     data: { labels, datasets: [{ data: valores, backgroundColor: cores, borderRadius: 4, maxBarThickness: 22 }] },
     options: {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { right: 60 } }, // espaço pro rótulo "Xd · Y pal." não cortar
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (item) => ` ${item.parsed.x} dia(s) em estoque` } },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const d = dados[item.dataIndex];
+              return [` ${d.dias} dia(s) em estoque`, ` ${d.paletes} palete(s) armazenado(s)`];
+            },
+          },
+        },
+        datalabels: {
+          color: cssVar('--text'),
+          anchor: 'end', align: 'end', offset: 4,
+          font: { family: 'Inter', size: 10, weight: '600' },
+          formatter: (valor, contexto) => {
+            const d = dados[contexto.dataIndex];
+            return `${d.dias}d · ${d.paletes} pal.`;
+          },
+        },
       },
       scales: {
         x: {
+          grace: '12%',
           ticks: { color: cssVar('--text-soft'), font: { family: 'Inter', size: 10.5 } },
           grid: { color: cssVar('--ice-line') },
           title: { display: true, text: 'Dias em estoque', color: cssVar('--text-soft'), font: { family: 'Inter', size: 10.5 } },
@@ -1557,6 +1586,7 @@ function renderGraficoAging(){
    ====================================================================== */
 let HIST_FILTRO_FAMILIA = '';
 let HIST_FILTRO_PRODUTO = '';
+let HIST_MODO_EXEMPLO = false;
 let CHART_HISTORICO = null;
 
 function familiasHistorico(){
@@ -1593,6 +1623,21 @@ function calcularHistoricoSaidas(familia, produto){
   return { labels, valores: chaves.map(k => porMes[k]) };
 }
 
+/* Gera uma tendência de 6 meses fictícia, só pra visualizar como o
+   gráfico de linha fica com mais histórico do que a operação ainda tem
+   registrado de verdade. NUNCA é usada pra nenhum cálculo real — só
+   substitui os dados exibidos aqui, e sempre com um aviso bem visível. */
+function gerarDadosExemploHistorico(){
+  const hoje = new Date();
+  const valoresExemplo = [18, 24, 21, 33, 27, 40]; // tendência de exemplo, fixa (não é aleatório a cada render)
+  const labels = [];
+  for(let i = 5; i >= 0; i--){
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    labels.push(`${NOMES_MES[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`);
+  }
+  return { labels, valores: valoresExemplo };
+}
+
 function renderGraficoHistorico(){
   const el = document.getElementById('graficoHistoricoPainel');
   if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
@@ -1604,13 +1649,20 @@ function renderGraficoHistorico(){
     HIST_FILTRO_PRODUTO = ''; // produto não pertence mais à família filtrada
   }
 
-  const { labels, valores } = calcularHistoricoSaidas(HIST_FILTRO_FAMILIA, HIST_FILTRO_PRODUTO);
+  const { labels, valores } = HIST_MODO_EXEMPLO
+    ? gerarDadosExemploHistorico()
+    : calcularHistoricoSaidas(HIST_FILTRO_FAMILIA, HIST_FILTRO_PRODUTO);
   const semDados = labels.length === 0;
 
   el.innerHTML = `
     <div class="grafico-panel">
       <div class="ocupacao-title">Histórico de saídas</div>
       <div class="grafico-sub">Paletes retirados por mês. Filtre por família e/ou produto pra ver a tendência de um item específico.</div>
+      <label class="hist-toggle-exemplo">
+        <input type="checkbox" id="histModoExemplo" ${HIST_MODO_EXEMPLO ? 'checked' : ''}>
+        Ver com dados de exemplo (6 meses) — não é o estoque real
+      </label>
+      ${HIST_MODO_EXEMPLO ? '' : `
       <div class="grafico-filtros">
         <select id="histFamiliaSelect" class="entrada-select">
           <option value="">Todas as famílias</option>
@@ -1620,22 +1672,30 @@ function renderGraficoHistorico(){
           <option value="">Todos os produtos${HIST_FILTRO_FAMILIA ? ' dessa família' : ''}</option>
           ${produtosDisponiveis.map(p => `<option value="${escapeHtml(p)}" ${p === HIST_FILTRO_PRODUTO ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
         </select>
-      </div>
+      </div>`}
+      ${HIST_MODO_EXEMPLO ? `<div class="carga-aviso" style="margin-bottom:12px;">⚠ Exibindo dados de EXEMPLO pra visualização — não reflete o estoque real. Desmarque a opção acima pra voltar aos dados de verdade.</div>` : ''}
       ${semDados
         ? `<div class="carga-vazio">Nenhuma saída registrada ainda${(HIST_FILTRO_FAMILIA || HIST_FILTRO_PRODUTO) ? ' pra esse filtro' : ''}.</div>`
         : `<div class="grafico-wrap"><canvas id="canvasHistorico"></canvas></div>`}
     </div>
   `;
 
-  document.getElementById('histFamiliaSelect').addEventListener('change', e => {
-    HIST_FILTRO_FAMILIA = e.target.value;
-    HIST_FILTRO_PRODUTO = '';
+  document.getElementById('histModoExemplo').addEventListener('change', e => {
+    HIST_MODO_EXEMPLO = e.target.checked;
     renderGraficoHistorico();
   });
-  document.getElementById('histProdutoSelect').addEventListener('change', e => {
-    HIST_FILTRO_PRODUTO = e.target.value;
-    renderGraficoHistorico();
-  });
+
+  if(!HIST_MODO_EXEMPLO){
+    document.getElementById('histFamiliaSelect').addEventListener('change', e => {
+      HIST_FILTRO_FAMILIA = e.target.value;
+      HIST_FILTRO_PRODUTO = '';
+      renderGraficoHistorico();
+    });
+    document.getElementById('histProdutoSelect').addEventListener('change', e => {
+      HIST_FILTRO_PRODUTO = e.target.value;
+      renderGraficoHistorico();
+    });
+  }
 
   if(semDados) return;
 
