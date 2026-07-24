@@ -216,11 +216,6 @@
   .grafico-wrap-bar{ height:290px; }
   .grafico-filtros{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
   .grafico-filtros .entrada-select{ width:auto; min-width:200px; flex:1; }
-  .hist-toggle-exemplo{
-    display:flex; align-items:center; gap:7px; font-size:11px; color:var(--text-soft);
-    margin-bottom:12px; cursor:pointer; user-select:none;
-  }
-  .hist-toggle-exemplo input{ accent-color:var(--frost); cursor:pointer; }
   .btn-voltar-grafico{
     background:none; border:none; color:var(--frost); font-size:11.5px; font-weight:600;
     cursor:pointer; margin:-4px 0 10px; padding:0; text-decoration:underline; font-family:var(--font-body);
@@ -1620,7 +1615,6 @@ function renderGraficoAging(){
    ====================================================================== */
 let HIST_FILTRO_FAMILIA = '';
 let HIST_FILTRO_PRODUTO = '';
-let HIST_MODO_EXEMPLO = false;
 let CHART_HISTORICO = null;
 
 function familiasHistorico(){
@@ -1657,21 +1651,6 @@ function calcularHistoricoSaidas(familia, produto){
   return { labels, valores: chaves.map(k => porMes[k]) };
 }
 
-/* Gera uma tendência de 6 meses fictícia, só pra visualizar como o
-   gráfico de linha fica com mais histórico do que a operação ainda tem
-   registrado de verdade. NUNCA é usada pra nenhum cálculo real — só
-   substitui os dados exibidos aqui, e sempre com um aviso bem visível. */
-function gerarDadosExemploHistorico(){
-  const hoje = new Date();
-  const valoresExemplo = [18, 24, 21, 33, 27, 40]; // tendência de exemplo, fixa (não é aleatório a cada render)
-  const labels = [];
-  for(let i = 5; i >= 0; i--){
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-    labels.push(`${NOMES_MES[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`);
-  }
-  return { labels, valores: valoresExemplo };
-}
-
 function renderGraficoHistorico(){
   const el = document.getElementById('graficoHistoricoPainel');
   if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
@@ -1683,20 +1662,13 @@ function renderGraficoHistorico(){
     HIST_FILTRO_PRODUTO = ''; // produto não pertence mais à família filtrada
   }
 
-  const { labels, valores } = HIST_MODO_EXEMPLO
-    ? gerarDadosExemploHistorico()
-    : calcularHistoricoSaidas(HIST_FILTRO_FAMILIA, HIST_FILTRO_PRODUTO);
+  const { labels, valores } = calcularHistoricoSaidas(HIST_FILTRO_FAMILIA, HIST_FILTRO_PRODUTO);
   const semDados = labels.length === 0;
 
   el.innerHTML = `
     <div class="grafico-panel">
       <div class="ocupacao-title">Histórico de saídas</div>
       <div class="grafico-sub">Paletes retirados por mês. Filtre por família e/ou produto pra ver a tendência de um item específico.</div>
-      <label class="hist-toggle-exemplo">
-        <input type="checkbox" id="histModoExemplo" ${HIST_MODO_EXEMPLO ? 'checked' : ''}>
-        Ver com dados de exemplo (6 meses) — não é o estoque real
-      </label>
-      ${HIST_MODO_EXEMPLO ? '' : `
       <div class="grafico-filtros">
         <select id="histFamiliaSelect" class="entrada-select">
           <option value="">Todas as famílias</option>
@@ -1706,30 +1678,22 @@ function renderGraficoHistorico(){
           <option value="">Todos os produtos${HIST_FILTRO_FAMILIA ? ' dessa família' : ''}</option>
           ${produtosDisponiveis.map(p => `<option value="${escapeHtml(p)}" ${p === HIST_FILTRO_PRODUTO ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
         </select>
-      </div>`}
-      ${HIST_MODO_EXEMPLO ? `<div class="carga-aviso" style="margin-bottom:12px;">⚠ Exibindo dados de EXEMPLO pra visualização — não reflete o estoque real. Desmarque a opção acima pra voltar aos dados de verdade.</div>` : ''}
+      </div>
       ${semDados
         ? `<div class="carga-vazio">Nenhuma saída registrada ainda${(HIST_FILTRO_FAMILIA || HIST_FILTRO_PRODUTO) ? ' pra esse filtro' : ''}.</div>`
         : `<div class="grafico-wrap"><canvas id="canvasHistorico"></canvas></div>`}
     </div>
   `;
 
-  document.getElementById('histModoExemplo').addEventListener('change', e => {
-    HIST_MODO_EXEMPLO = e.target.checked;
+  document.getElementById('histFamiliaSelect').addEventListener('change', e => {
+    HIST_FILTRO_FAMILIA = e.target.value;
+    HIST_FILTRO_PRODUTO = '';
     renderGraficoHistorico();
   });
-
-  if(!HIST_MODO_EXEMPLO){
-    document.getElementById('histFamiliaSelect').addEventListener('change', e => {
-      HIST_FILTRO_FAMILIA = e.target.value;
-      HIST_FILTRO_PRODUTO = '';
-      renderGraficoHistorico();
-    });
-    document.getElementById('histProdutoSelect').addEventListener('change', e => {
-      HIST_FILTRO_PRODUTO = e.target.value;
-      renderGraficoHistorico();
-    });
-  }
+  document.getElementById('histProdutoSelect').addEventListener('change', e => {
+    HIST_FILTRO_PRODUTO = e.target.value;
+    renderGraficoHistorico();
+  });
 
   if(semDados) return;
 
