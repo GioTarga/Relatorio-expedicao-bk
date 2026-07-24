@@ -190,7 +190,7 @@
   .ocupacao-head{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
   .ocupacao-title{
     font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px; color:var(--frost);
-    display:flex; align-items:center; gap:9px;
+    display:flex; align-items:center; gap:9px; margin-bottom:6px;
   }
   .ocupacao-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .ocupacao-tabs{ display:flex; gap:6px; }
@@ -220,9 +220,11 @@
     background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
     padding:16px 20px; margin-bottom:18px;
   }
-  .grafico-sub{ font-size:11px; color:var(--text-soft); margin:-6px 0 12px; }
+  .grafico-sub{ font-size:11px; color:var(--text-soft); margin:0 0 14px; }
   .grafico-wrap{ position:relative; height:270px; }
   .grafico-wrap-bar{ height:290px; }
+  .grafico-filtros{ display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+  .grafico-filtros .entrada-select{ width:auto; min-width:200px; flex:1; }
   .btn-voltar-grafico{
     background:none; border:none; color:var(--frost); font-size:11.5px; font-weight:600;
     cursor:pointer; margin:-4px 0 10px; padding:0; text-decoration:underline; font-family:var(--font-body);
@@ -455,6 +457,8 @@
       <div id="graficoFamiliasPainel"></div>
 
       <div id="graficoAgingPainel"></div>
+
+      <div id="graficoHistoricoPainel"></div>
 
       <div id="conflitosAlerta"></div>
 
@@ -1439,7 +1443,22 @@ function renderGraficoFamilias(){
       plugins: {
         legend: {
           position: 'right',
-          labels: { color: cssVar('--text-soft'), font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10 },
+          labels: {
+            color: cssVar('--text-soft'), font: { family: 'Inter', size: 11 }, boxWidth: 12, padding: 10,
+            generateLabels: (chart) => {
+              const dataset = chart.data.datasets[0];
+              return chart.data.labels.map((label, i) => {
+                const valor = dataset.data[i];
+                const pct = totalBase ? Math.round((valor / totalBase) * 100) : 0;
+                return {
+                  text: `${label} — ${pct}%`,
+                  fillStyle: dataset.backgroundColor[i],
+                  strokeStyle: dataset.backgroundColor[i],
+                  index: i,
+                };
+              });
+            },
+          },
         },
         tooltip: {
           callbacks: {
@@ -1524,6 +1543,130 @@ function renderGraficoAging(){
           ticks: { color: cssVar('--text'), font: { family: 'Inter', size: 10.5 } },
           grid: { display: false },
         },
+      },
+    },
+  });
+}
+
+/* ======================================================================
+   GRÁFICO: histórico de saídas ao longo do tempo, com filtro de família
+   e/ou produto. Agrupa por mês (dia a dia ficaria ruidoso demais pro
+   volume de dados). O filtro de produto sempre respeita a família
+   escolhida — se trocar a família, o produto selecionado é limpo, pra
+   nunca ficar um produto de outra família escondido no filtro.
+   ====================================================================== */
+let HIST_FILTRO_FAMILIA = '';
+let HIST_FILTRO_PRODUTO = '';
+let CHART_HISTORICO = null;
+
+function familiasHistorico(){
+  return [...new Set(OCUPACAO_REGISTROS.filter(r => r.familia).map(r => r.familia))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function produtosDaFamiliaHistorico(familia){
+  const set = new Set();
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(familia && r.familia !== familia) return;
+    r.produtos.forEach(p => set.add(p));
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+const NOMES_MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+function calcularHistoricoSaidas(familia, produto){
+  const porMes = {};
+  OCUPACAO_REGISTROS.forEach(r => {
+    if(!r.dataSaida) return;
+    if(familia && r.familia !== familia) return;
+    if(produto && !r.produtos.includes(produto)) return;
+    const partes = r.dataSaida.split('/'); // dd/mm/aaaa
+    if(partes.length !== 3) return;
+    const chave = `${partes[2]}-${partes[1].padStart(2, '0')}`;
+    porMes[chave] = (porMes[chave] || 0) + 1;
+  });
+  const chaves = Object.keys(porMes).sort();
+  const labels = chaves.map(k => {
+    const [ano, mes] = k.split('-');
+    return `${NOMES_MES[parseInt(mes, 10) - 1]}/${ano.slice(2)}`;
+  });
+  return { labels, valores: chaves.map(k => porMes[k]) };
+}
+
+function renderGraficoHistorico(){
+  const el = document.getElementById('graficoHistoricoPainel');
+  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
+  if(!window.Chart){ el.innerHTML = ''; return; }
+
+  const familias = familiasHistorico();
+  const produtosDisponiveis = produtosDaFamiliaHistorico(HIST_FILTRO_FAMILIA);
+  if(HIST_FILTRO_PRODUTO && !produtosDisponiveis.includes(HIST_FILTRO_PRODUTO)){
+    HIST_FILTRO_PRODUTO = ''; // produto não pertence mais à família filtrada
+  }
+
+  const { labels, valores } = calcularHistoricoSaidas(HIST_FILTRO_FAMILIA, HIST_FILTRO_PRODUTO);
+  const semDados = labels.length === 0;
+
+  el.innerHTML = `
+    <div class="grafico-panel">
+      <div class="ocupacao-title">Histórico de saídas</div>
+      <div class="grafico-sub">Paletes retirados por mês. Filtre por família e/ou produto pra ver a tendência de um item específico.</div>
+      <div class="grafico-filtros">
+        <select id="histFamiliaSelect" class="entrada-select">
+          <option value="">Todas as famílias</option>
+          ${familias.map(f => `<option value="${escapeHtml(f)}" ${f === HIST_FILTRO_FAMILIA ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
+        </select>
+        <select id="histProdutoSelect" class="entrada-select">
+          <option value="">Todos os produtos${HIST_FILTRO_FAMILIA ? ' dessa família' : ''}</option>
+          ${produtosDisponiveis.map(p => `<option value="${escapeHtml(p)}" ${p === HIST_FILTRO_PRODUTO ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+        </select>
+      </div>
+      ${semDados
+        ? `<div class="carga-vazio">Nenhuma saída registrada ainda${(HIST_FILTRO_FAMILIA || HIST_FILTRO_PRODUTO) ? ' pra esse filtro' : ''}.</div>`
+        : `<div class="grafico-wrap"><canvas id="canvasHistorico"></canvas></div>`}
+    </div>
+  `;
+
+  document.getElementById('histFamiliaSelect').addEventListener('change', e => {
+    HIST_FILTRO_FAMILIA = e.target.value;
+    HIST_FILTRO_PRODUTO = '';
+    renderGraficoHistorico();
+  });
+  document.getElementById('histProdutoSelect').addEventListener('change', e => {
+    HIST_FILTRO_PRODUTO = e.target.value;
+    renderGraficoHistorico();
+  });
+
+  if(semDados) return;
+
+  if(CHART_HISTORICO) CHART_HISTORICO.destroy();
+  const ctx = document.getElementById('canvasHistorico').getContext('2d');
+  CHART_HISTORICO = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: valores,
+        borderColor: cssVar('--frost'),
+        backgroundColor: 'rgba(217,164,65,0.15)',
+        fill: true,
+        tension: 0.3,
+        pointBackgroundColor: cssVar('--frost'),
+        pointBorderColor: cssVar('--panel'),
+        pointRadius: 4,
+        pointHoverRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) => ` ${item.parsed.y} palete(s) retirado(s)` } },
+      },
+      scales: {
+        x: { ticks: { color: cssVar('--text-soft'), font: { family: 'Inter', size: 10.5 } }, grid: { color: cssVar('--ice-line') } },
+        y: { beginAtZero: true, ticks: { color: cssVar('--text-soft'), precision: 0, font: { family: 'Inter', size: 10.5 } }, grid: { color: cssVar('--ice-line') } },
       },
     },
   });
@@ -2463,6 +2606,7 @@ function renderAll(){
   renderOcupacaoPainel();
   renderGraficoFamilias();
   renderGraficoAging();
+  renderGraficoHistorico();
   renderConflitos();
   renderLinhasIgnoradas();
   renderProximosASair();
