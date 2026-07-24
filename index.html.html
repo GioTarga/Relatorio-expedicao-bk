@@ -3,57 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <title>Câmara Fria — Planta de Endereçamento · Bread King</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0f1c24;
-    --bg-soft:#152631;
-    --panel:#132029;
-    --frost:#8fe3f0;
-    --frost-dim:#4f8b96;
-    --ice-line:#1e3b45;
-    --extra:#e2a33d;
-    --extra-dim:#8a6a2c;
-    --text:#eaf6f8;
-    --text-soft:#9fc2c9;
-    --red:#c23b3b;
-    --highlight:#baff29;
+    /* Vermelho Bread King — cor estrutural: cabeçalhos, abas, barras de destaque */
+    --brand:#8B1F24;
+    --brand-dim:#4E1114;
+    /* Dourado trigo/crosta — cor de interação: valores, links, KPIs */
+    --frost:#D9A441;
+    --frost-dim:#8A6B2B;
+    /* Âmbar queimado — avisos (precisa ficar visualmente distinto do dourado acima) */
+    --extra:#C97A2B;
+    --extra-dim:#6E4419;
+    /* Neutros: carvão quente, não ciano de "painel futurista" */
+    --bg:#16181B;
+    --bg-soft:#1E2023;
+    --panel:#1B1A1B;
+    --ice-line:#332B28;
+    --text:#F2EAE1;
+    --text-soft:#B6A99C;
+    /* Vermelho de alerta — precisa ser claramente diferente do --brand acima (erros vs. marca) */
+    --red:#E6533F;
+    /* Verde — só pra destaque de resultado de busca, propositalmente fora da paleta da marca */
+    --highlight:#9FD675;
+    --font-display:'Oswald', 'Arial Narrow', sans-serif;
+    --font-body:'Inter', 'Segoe UI', Arial, sans-serif;
+    --font-mono:'IBM Plex Mono', var(--font-mono);
   }
   *{box-sizing:border-box;}
   body{
     margin:0;
     background:
-      radial-gradient(ellipse at 20% -10%, rgba(143,227,240,0.08), transparent 55%),
+      radial-gradient(ellipse at 20% -10%, rgba(217,164,65,0.07), transparent 55%),
       var(--bg);
     color:var(--text);
-    font-family:'Segoe UI', Arial, sans-serif;
+    font-family:var(--font-body);
     min-height:100vh;
   }
 
   .topbar{
     padding:26px 28px 20px;
-    border-bottom:1px solid var(--ice-line);
+    border-bottom:3px solid var(--brand);
     position:relative;
     overflow:hidden;
   }
   .topbar::before{
-    /* textura sutil de "geada" — linhas diagonais finas */
+    /* textura sutil — linhas diagonais finas, tom quente */
     content:"";
     position:absolute; inset:0;
-    background-image:repeating-linear-gradient(115deg, rgba(143,227,240,0.05) 0px, rgba(143,227,240,0.05) 1px, transparent 1px, transparent 14px);
+    background-image:repeating-linear-gradient(115deg, rgba(217,164,65,0.045) 0px, rgba(217,164,65,0.045) 1px, transparent 1px, transparent 14px);
     pointer-events:none;
   }
   .topbar-inner{ position:relative; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; max-width:1400px; margin:0 auto; }
-  .brand-block .eyebrow{ font-size:10.5px; letter-spacing:3px; text-transform:uppercase; color:var(--frost); font-weight:700; margin-bottom:6px; }
-  .brand-block h1{ margin:0; font-size:26px; font-weight:800; letter-spacing:0.2px; }
-  .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:italic; }
+  .brand-block .eyebrow{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:3px; text-transform:uppercase; color:var(--brand); font-weight:600; margin-bottom:6px; }
+  .brand-block h1{ margin:0; font-family:var(--font-display); font-size:29px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
+  .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:normal; }
 
   .temp-badge{
     display:flex; align-items:center; gap:10px;
-    background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
+    background:var(--panel); border:1px solid var(--ice-line); border-left:3px solid var(--brand); border-radius:8px;
     padding:10px 18px;
   }
   .temp-badge .ico{ font-size:22px; }
-  .temp-badge .val{ font-size:20px; font-weight:800; color:var(--frost); font-family:'Consolas', monospace; }
+  .temp-badge .val{ font-size:20px; font-weight:800; color:var(--frost); font-family:var(--font-mono); }
   .temp-badge .lbl{ font-size:10px; color:var(--text-soft); text-transform:uppercase; letter-spacing:1px; }
 
   .container{ max-width:1400px; margin:0 auto; padding:26px 28px 60px; }
@@ -69,14 +83,14 @@
   .floor-btn{
     width:52px; height:52px; border-radius:10px; border:1px solid var(--ice-line);
     background:var(--bg-soft); color:var(--text-soft); font-size:18px; font-weight:800;
-    cursor:pointer; font-family:'Consolas', monospace; transition:all 0.15s;
+    cursor:pointer; font-family:var(--font-mono); transition:all 0.15s;
     display:flex; align-items:center; justify-content:center;
   }
   .floor-btn:hover{ border-color:var(--frost-dim); color:var(--text); }
   .floor-btn.active{
-    background:linear-gradient(135deg, rgba(143,227,240,0.22), rgba(143,227,240,0.06));
+    background:linear-gradient(135deg, rgba(217,164,65,0.22), rgba(217,164,65,0.06));
     border-color:var(--frost); color:var(--frost);
-    box-shadow:0 0 16px rgba(143,227,240,0.35), inset 0 0 10px rgba(143,227,240,0.15);
+    box-shadow:0 0 16px rgba(217,164,65,0.35), inset 0 0 10px rgba(217,164,65,0.15);
   }
 
   .content{ flex:1; min-width:0; }
@@ -84,21 +98,21 @@
   .kpi-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
   .kpi-card{ background:var(--panel); border:1px solid var(--ice-line); border-radius:12px; padding:14px 16px; }
   .kpi-card .lbl{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-soft); font-weight:700; margin-bottom:6px; }
-  .kpi-card .val{ font-size:22px; font-weight:800; color:var(--frost); font-family:'Consolas', monospace; }
+  .kpi-card .val{ font-size:22px; font-weight:800; color:var(--frost); font-family:var(--font-mono); }
 
   .rua-panel{
     background:var(--panel); border:1px solid var(--ice-line); border-radius:14px;
     padding:20px 22px; margin-bottom:18px;
   }
   .rua-head{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
-  .rua-head h2{ margin:0; font-size:15px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text); font-weight:800; }
+  .rua-head h2{ margin:0; font-family:var(--font-display); font-size:16px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text); font-weight:600; }
   .rua-head .meta{ font-size:11.5px; color:var(--text-soft); }
 
   .rack-scroll{ overflow-x:auto; padding-bottom:6px; }
   .lado-label{ font-size:10px; color:var(--frost-dim); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin:4px 0; }
   .rua-mid-label{
     font-size:15px; color:var(--frost); text-transform:uppercase; letter-spacing:3px;
-    text-align:center; padding:10px 0; font-weight:800; font-family:'Consolas', monospace;
+    text-align:center; padding:10px 0; font-weight:800; font-family:var(--font-mono);
     opacity:0.9;
   }
 
@@ -112,7 +126,7 @@
     border-radius:9px; padding:8px 16px; font-size:12.5px; font-weight:700; cursor:pointer;
     transition:all 0.15s;
   }
-  .btn-sync:hover{ background:rgba(143,227,240,0.1); }
+  .btn-sync:hover{ background:rgba(217,164,65,0.1); }
   .btn-sync:disabled{ opacity:0.5; cursor:default; }
   .sync-status{ font-size:11.5px; color:var(--text-soft); }
 
@@ -125,16 +139,17 @@
   .aloc-card .aloc-destino strong{ color:var(--frost); }
   .aloc-card .aloc-sub{ font-size:11px; color:var(--text-soft); margin-top:4px; }
   .aloc-card.cheio{ border-color:var(--red); background:rgba(194,59,59,0.08); }
-  .aloc-card.cheio .aloc-destino{ color:#e88b8b; }
+  .aloc-card.cheio .aloc-destino{ color:#F0998A; }
 
   .saida-panel{
     background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
     padding:16px 20px; margin-bottom:18px;
   }
   .saida-panel .saida-title{
-    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
-    color:var(--frost); margin-bottom:12px; display:flex; align-items:center; gap:8px;
+    font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--frost); margin-bottom:12px; display:flex; align-items:center; gap:9px;
   }
+  .saida-panel .saida-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .saida-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px,1fr)); gap:10px; }
   .saida-card{
     background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:10px; padding:12px 14px;
@@ -143,7 +158,7 @@
   .saida-card .item-wrap{ padding:4px 0; border-top:1px dashed var(--ice-line); }
   .saida-card .item-wrap:first-of-type{ border-top:none; }
   .saida-card .item{ display:flex; justify-content:space-between; align-items:baseline; font-size:12px; }
-  .saida-card .item .pos{ font-family:'Consolas', monospace; color:var(--text); }
+  .saida-card .item .pos{ font-family:var(--font-mono); color:var(--text); }
   .saida-card .item .dias{ color:var(--extra); font-weight:700; white-space:nowrap; margin-left:8px; }
   .saida-card .item-produto{ font-size:11px; color:var(--text-soft); margin-top:1px; }
   .produtos-list{ margin:2px 0 0; padding-left:14px; }
@@ -174,8 +189,10 @@
   }
   .ocupacao-head{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
   .ocupacao-title{
-    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px; color:var(--frost);
+    font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px; color:var(--frost);
+    display:flex; align-items:center; gap:9px;
   }
+  .ocupacao-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .ocupacao-tabs{ display:flex; gap:6px; }
   .ocupacao-tab{
     background:var(--bg-soft); border:1px solid var(--ice-line); color:var(--text-soft);
@@ -183,7 +200,7 @@
     text-transform:uppercase; letter-spacing:0.5px;
   }
   .ocupacao-tab:hover{ color:var(--text); border-color:var(--frost-dim); }
-  .ocupacao-tab.active{ background:var(--frost); color:#04141a; border-color:var(--frost); }
+  .ocupacao-tab.active{ background:var(--frost); color:#0F0D0C; border-color:var(--frost); }
   .ocupacao-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px; }
   .ocupacao-card{
     background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:10px; padding:12px 14px;
@@ -194,9 +211,9 @@
   .ocupacao-card.alto .oc-bar{ background:var(--extra); }
   .ocupacao-card.critico .oc-bar{ background:var(--red); }
   .oc-nums{ display:flex; justify-content:space-between; align-items:baseline; }
-  .oc-pct{ font-family:'Consolas', monospace; font-weight:800; font-size:15px; color:var(--frost); }
+  .oc-pct{ font-family:var(--font-mono); font-weight:800; font-size:15px; color:var(--frost); }
   .ocupacao-card.alto .oc-pct{ color:var(--extra); }
-  .ocupacao-card.critico .oc-pct{ color:#e88b8b; }
+  .ocupacao-card.critico .oc-pct{ color:#F0998A; }
   .oc-count{ font-size:10.5px; color:var(--text-soft); }
 
   .estoque-list{ display:flex; flex-direction:column; gap:2px; max-height:360px; overflow-y:auto; }
@@ -208,16 +225,17 @@
   .estoque-row:hover{ background:var(--bg-soft); }
   .estoque-swatch{ width:10px; height:10px; border-radius:3px; flex-shrink:0; }
   .estoque-nome{ flex:1; color:var(--text); }
-  .estoque-qtd{ font-family:'Consolas', monospace; font-weight:700; color:var(--frost); font-size:12px; white-space:nowrap; }
+  .estoque-qtd{ font-family:var(--font-mono); font-weight:700; color:var(--frost); font-size:12px; white-space:nowrap; }
 
   .conflito-panel{
     background:rgba(194,59,59,0.12); border:1px solid var(--red); border-radius:12px;
     padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6; color:var(--text);
   }
   .conflito-panel .conflito-title{
-    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
-    color:var(--red); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+    font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--red); margin-bottom:8px; display:flex; align-items:center; gap:9px;
   }
+  .conflito-panel .conflito-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .conflito-panel ul{ margin:0; padding-left:18px; }
   .conflito-panel li{ margin-bottom:6px; }
   .conflito-panel .sub{ display:block; font-size:11px; color:var(--text-soft); margin-top:2px; margin-left:2px; }
@@ -227,9 +245,10 @@
     padding:14px 18px; margin-bottom:18px; font-size:12.5px; line-height:1.6; color:var(--text);
   }
   .ignoradas-panel .ignoradas-title{
-    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
-    color:var(--extra); margin-bottom:8px; display:flex; align-items:center; gap:8px;
+    font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--extra); margin-bottom:8px; display:flex; align-items:center; gap:9px;
   }
+  .ignoradas-panel .ignoradas-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .ignoradas-panel ul{ margin:0; padding-left:18px; }
   .ignoradas-panel li{ margin-bottom:4px; }
 
@@ -240,8 +259,8 @@
   }
 
   .tip{
-    position:fixed; pointer-events:none; background:#04141a; border:1px solid var(--frost-dim);
-    color:var(--frost); font-family:'Consolas', monospace; font-size:12px; padding:8px 12px;
+    position:fixed; pointer-events:none; background:#0F0D0C; border:1px solid var(--frost-dim);
+    color:var(--frost); font-family:var(--font-mono); font-size:12px; padding:8px 12px;
     border-radius:6px; opacity:0; transition:opacity 0.1s; z-index:50;
     max-width:250px; white-space:pre-line; line-height:1.4; box-shadow:0 4px 16px rgba(0,0,0,0.4);
   }
@@ -252,18 +271,20 @@
   .view-tabs-inner{ max-width:1400px; margin:0 auto; padding:0 24px; display:flex; gap:4px; }
   .view-tab{
     background:none; border:none; border-bottom:3px solid transparent; color:var(--text-soft);
-    font-size:13px; font-weight:700; padding:14px 18px 11px; cursor:pointer; font-family:inherit;
+    font-family:var(--font-display); font-size:13px; font-weight:600; letter-spacing:0.3px;
+    text-transform:uppercase; padding:14px 18px 11px; cursor:pointer;
   }
   .view-tab:hover{ color:var(--text); }
-  .view-tab.active{ color:var(--frost); border-bottom-color:var(--frost); }
+  .view-tab.active{ color:var(--brand); border-bottom-color:var(--brand); }
 
   .carga-layout{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
   .carga-col-produtos{ flex:1 1 320px; min-width:280px; }
   .carga-col-caminhao{ flex:1.4 1 420px; min-width:320px; }
   .carga-panel-title{
-    font-weight:800; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
-    color:var(--frost); margin-bottom:12px;
+    font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:1.5px;
+    color:var(--frost); margin-bottom:12px; display:flex; align-items:center; gap:9px;
   }
+  .carga-panel-title::before{ content:''; width:4px; height:12px; background:currentColor; border-radius:1px; flex-shrink:0; }
   .carga-dica{ font-size:11px; color:var(--text-soft); margin:8px 0 12px; line-height:1.5; }
 
   .carga-produtos-lista{
@@ -279,20 +300,20 @@
   .produto-chip.chip-esgotado{ opacity:0.4; cursor:not-allowed; }
   .produto-chip .estoque-swatch{ width:10px; height:10px; border-radius:3px; flex-shrink:0; }
   .produto-chip .chip-nome{ flex:1; font-size:12.5px; color:var(--text); }
-  .produto-chip .chip-qtd{ font-family:'Consolas', monospace; font-size:11px; color:var(--text-soft); white-space:nowrap; }
+  .produto-chip .chip-qtd{ font-family:var(--font-mono); font-size:11px; color:var(--text-soft); white-space:nowrap; }
   .produto-chip.chip-flash{ animation: chipFlash 0.4s ease; }
-  @keyframes chipFlash{ 0%{ background:rgba(143,227,240,0.25); } 100%{ background:var(--panel); } }
+  @keyframes chipFlash{ 0%{ background:rgba(217,164,65,0.25); } 100%{ background:var(--panel); } }
 
   .caminhao-drop{
     background:var(--panel); border:1px solid var(--ice-line); border-radius:12px;
     padding:16px; display:flex; align-items:center; justify-content:center; margin-bottom:14px;
     transition:border-color 0.15s, background 0.15s;
   }
-  .caminhao-drop.drop-ativo{ border-color:var(--frost); background:rgba(143,227,240,0.06); }
+  .caminhao-drop.drop-ativo{ border-color:var(--frost); background:rgba(217,164,65,0.06); }
   .caminhao-svg{ width:100%; max-width:320px; height:auto; }
 
   .carga-resumo{ font-size:12px; color:var(--text-soft); margin-bottom:10px; }
-  .carga-resumo strong{ color:var(--frost); font-family:'Consolas', monospace; }
+  .carga-resumo strong{ color:var(--frost); font-family:var(--font-mono); }
 
   .carga-lista{ display:flex; flex-direction:column; gap:6px; margin-bottom:16px; max-height:320px; overflow-y:auto; }
   .carga-row{
@@ -308,7 +329,7 @@
   }
   .cr-step-btn:hover{ border-color:var(--frost-dim); }
   .cr-step-btn:disabled{ opacity:0.35; cursor:not-allowed; }
-  .cr-qtd{ font-family:'Consolas', monospace; font-weight:700; font-size:13px; min-width:18px; text-align:center; }
+  .cr-qtd{ font-family:var(--font-mono); font-weight:700; font-size:13px; min-width:18px; text-align:center; }
   .cr-remover{
     background:none; border:none; color:var(--text-soft); cursor:pointer; font-size:14px; padding:2px 4px;
   }
@@ -348,7 +369,7 @@
   }
   .entrada-vaga-row{
     background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:7px;
-    padding:7px 10px; font-size:12px; font-family:'Consolas', monospace; color:var(--text);
+    padding:7px 10px; font-size:12px; font-family:var(--font-mono); color:var(--text);
   }
   .entrada-familia-auto{
     display:flex; align-items:center; gap:8px; background:var(--bg-soft); border:1px solid var(--ice-line);
@@ -449,7 +470,7 @@
   <div class="carga-layout">
 
     <div class="carga-col-produtos">
-      <div class="carga-panel-title">📦 Produtos em estoque</div>
+      <div class="carga-panel-title">Produtos em estoque</div>
       <div class="busca-row">
         <span class="busca-ico">🔍</span>
         <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar por nome ou código…" autocomplete="off">
@@ -459,7 +480,7 @@
     </div>
 
     <div class="carga-col-caminhao">
-      <div class="carga-panel-title">🚛 Carga do caminhão</div>
+      <div class="carga-panel-title">Carga do caminhão</div>
       <div id="caminhaoDrop" class="caminhao-drop">
         <svg viewBox="0 0 300 120" class="caminhao-svg" id="caminhaoSvg">
           <rect x="8" y="30" width="180" height="62" rx="4" fill="none" stroke="var(--frost-dim)" stroke-width="2" stroke-dasharray="6 4"></rect>
@@ -491,7 +512,7 @@
   <div class="carga-layout">
 
     <div class="carga-col-produtos">
-      <div class="carga-panel-title">📥 Produto que está entrando</div>
+      <div class="carga-panel-title">Produto que está entrando</div>
       <div class="busca-row">
         <span class="busca-ico">🔍</span>
         <input type="text" id="buscaEntradaProduto" class="busca-input" placeholder="Buscar por nome ou código…" autocomplete="off">
@@ -501,7 +522,7 @@
     </div>
 
     <div class="carga-col-caminhao">
-      <div class="carga-panel-title">📝 Detalhes da entrada</div>
+      <div class="carga-panel-title">Detalhes da entrada</div>
       <div id="entradaSelecionado" class="entrada-selecionado-vazio">Escolha um produto na lista ao lado.</div>
 
       <div id="entradaCampos" style="display:none;">
@@ -917,7 +938,7 @@ function doorWallHtml(portaLabel, side){
   const first = RACK.cells[EXTRA_START];
   const last = RACK.cells[EXTRA_START + EXTRA_COUNT - 1];
   const centerX = (first.x + last.x + last.w) / 2;
-  const doorW = 40, wallColor = '#5c828c', h = 66;
+  const doorW = 40, wallColor = '#5C5049', h = 66;
   const isTop = side === 'top';
   const wallY = isTop ? h - 12 : 12;
   const leafEndY = isTop ? wallY - doorW : wallY + doorW;
@@ -1065,7 +1086,7 @@ function renderLinhasIgnoradas(){
 
   el.innerHTML = `
     <div class="ignoradas-panel">
-      <span class="ignoradas-title">⚠ ${LINHAS_IGNORADAS.length} linha(s) ignorada(s) na planilha</span>
+      <span class="ignoradas-title">${LINHAS_IGNORADAS.length} linha(s) ignorada(s) na planilha</span>
       <ul>${itens}</ul>
     </div>
   `;
@@ -1084,7 +1105,7 @@ function renderConflitos(){
 
   el.innerHTML = `
     <div class="conflito-panel">
-      <span class="conflito-title">🚨 ${OCUPACAO_CONFLITOS.length} posição(ões) com registro duplicado</span>
+      <span class="conflito-title">${OCUPACAO_CONFLITOS.length} posição(ões) com registro duplicado</span>
       <ul>${itens}</ul>
     </div>
   `;
@@ -1122,7 +1143,7 @@ function renderProximosASair(){
 
   el.innerHTML = `
     <div class="saida-panel">
-      <span class="saida-title">🔻 Retirar primeiro (mais antigos por família)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
+      <span class="saida-title">Retirar primeiro (mais antigos por família)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
       <div class="saida-grid">${cards}</div>
     </div>
   `;
@@ -1245,7 +1266,7 @@ function renderAlocacaoSugerida(){
 
   el.innerHTML = `
     <div class="saida-panel">
-      <span class="saida-title">📥 Onde guardar o próximo palete (por família, seguindo o FIFO)</span>
+      <span class="saida-title">Onde guardar o próximo palete (por família, seguindo o FIFO)</span>
       <div class="saida-grid">${cards}</div>
     </div>
   `;
@@ -1316,7 +1337,7 @@ function renderOcupacaoPainel(){
   el.innerHTML = `
     <div class="ocupacao-panel">
       <div class="ocupacao-head">
-        <span class="ocupacao-title">📊 Nível de ocupação</span>
+        <span class="ocupacao-title">Nível de ocupação</span>
         <div class="ocupacao-tabs">
           ${tab('camara','Câmara toda')}
           ${tab('rua','Por rua')}
@@ -1377,7 +1398,7 @@ function renderEstoquePorProduto(){
 
   el.innerHTML = `
     <div class="saida-panel">
-      <span class="saida-title">📦 Estoque por produto (em paletes)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
+      <span class="saida-title">Estoque por produto (em paletes)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
       <div class="estoque-list">${linhas}</div>
     </div>
   `;
@@ -1787,7 +1808,7 @@ function mostrarRevisaoPaletesMistos(paletes){
   const ambiguos = paletes.filter(p => p.ambiguo);
 
   el.innerHTML = `
-    <div class="carga-aviso" style="border-color:var(--frost-dim);color:var(--frost);background:rgba(143,227,240,0.06);margin-bottom:12px;">
+    <div class="carga-aviso" style="border-color:var(--frost-dim);color:var(--frost);background:rgba(217,164,65,0.06);margin-bottom:12px;">
       ⚠ ${ambiguos.length} palete(s) misto(s) nessa carga — confirme o que sai de cada um antes de seguir.
     </div>
     <div class="entrada-vagas-lista" style="margin-bottom:12px;">
