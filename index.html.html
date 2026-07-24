@@ -493,7 +493,7 @@
       <div class="carga-panel-title">📥 Produto que está entrando</div>
       <div class="busca-row">
         <span class="busca-ico">🔍</span>
-        <input type="text" id="buscaEntradaProduto" class="busca-input" placeholder="Buscar no catálogo…" autocomplete="off">
+        <input type="text" id="buscaEntradaProduto" class="busca-input" placeholder="Buscar por nome ou código…" autocomplete="off">
       </div>
       <div class="carga-dica">A lista vem do catálogo oficial do CIGAM — só escolher, sem digitar nome de produto.</div>
       <div id="listaProdutosEntrada" class="carga-produtos-lista"></div>
@@ -1785,7 +1785,23 @@ async function enviarConfirmacaoCarga(paletes){
    ====================================================================== */
 
 function listaProdutosCatalogoFiltrada(){
-  return PRODUTOS_CATALOGO.filter(p => !FILTRO_ENTRADA || p.descricao.toLowerCase().includes(FILTRO_ENTRADA));
+  if(!FILTRO_ENTRADA) return PRODUTOS_CATALOGO;
+
+  // o Google Sheets costuma converter a coluna CÓDIGO pra número e comer
+  // o zero à esquerda (ex: "007306" vira "7306") — por isso, além da
+  // busca normal, compara também os dois lados sem zeros na frente
+  const buscaSoDigitos = /^\d+$/.test(FILTRO_ENTRADA);
+  const filtroSemZeros = FILTRO_ENTRADA.replace(/^0+/, '');
+
+  return PRODUTOS_CATALOGO.filter(p => {
+    if(p.descricao.toLowerCase().includes(FILTRO_ENTRADA)) return true;
+    if(p.codigo.toLowerCase().includes(FILTRO_ENTRADA)) return true;
+    if(buscaSoDigitos && filtroSemZeros){
+      const codigoSemZeros = p.codigo.replace(/^0+/, '');
+      if(codigoSemZeros === filtroSemZeros) return true;
+    }
+    return false;
+  });
 }
 
 function familiasConhecidas(){
