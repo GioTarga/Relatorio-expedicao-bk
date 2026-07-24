@@ -860,6 +860,19 @@ function renderRackSvg(rua, lado, andar){
     const opP1 = buscaAtiva ? (matchP1 ? '1' : '0.12') : '1';
     const opP2 = buscaAtiva ? (matchP2 ? '0.72' : '0.12') : '0.72';
 
+    // Posição 01 só comporta 1 palete de verdade — desenha uma vaga única,
+    // não duas. Exceção: se por algum motivo já existir um registro de P2
+    // aqui (dado antigo incorreto), mantém o desenho normal de 2 caixas,
+    // pra não esconder esse problema em vez de sinalizar ele.
+    if(c.numero === 1 && !ocupP2){
+      rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
+                  fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter} · só 1 palete cabe aqui"></rect>`;
+      rects += `<rect x="${c.x+1.5}" y="1.5" width="${c.w-3}" height="${c.h-3}" rx="1.5"
+                  fill="${fillP1}" stroke="${strokeP1}" stroke-width="${swP1}" opacity="${opP1}"
+                  class="rack-cell${conflitoP1 ? ' conflito-pulse' : ''}" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
+      return;
+    }
+
     // contorno externo da posição (agrupa os 2 paletes)
     rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
                 fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter}"></rect>`;
@@ -935,10 +948,11 @@ function renderRua(rua){
     `;
   }
 
+  const paletesNesteAndar = rua.lados.length * paletesTotaisNoAndar(andarAtual);
   return `
     <div class="rua-panel">
       <div class="rua-head">
-        <span class="meta">${capacidade} posições (${capacidade*PALETES_POR_POSICAO} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · 20 ${extraAtivo ? '+ 2 (extra) ' : ''}+ 20 ${isDouble ? 'por lado' : ''}${!extraAtivo ? ' · sem as 2 extras neste andar' : ''}</span>
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · 20 ${extraAtivo ? '+ 2 (extra) ' : ''}+ 20 ${isDouble ? 'por lado' : ''}${!extraAtivo ? ' · sem as 2 extras neste andar' : ''}</span>
       </div>
       ${body}
     </div>
@@ -962,9 +976,21 @@ function paletesOcupados(rua, lado, andar){
   return count;
 }
 
+/* Quantos paletes cabem numa posição: 2 (P1+P2) pra quase todas, exceto a
+   Posição 01 de cada andar/frente, que só comporta 1 palete (P1) — regra
+   física da câmara, confirmada pela operação. */
+function capacidadePosicao(numero){
+  return numero === 1 ? 1 : PALETES_POR_POSICAO;
+}
+
 function paletesTotaisNoAndar(andar){
-  const posPorLado = andarTemExtra(andar) ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
-  return posPorLado * PALETES_POR_POSICAO;
+  const extraAtivo = andarTemExtra(andar);
+  let total = 0;
+  RACK.cells.forEach(c => {
+    if(c.isExtra && !extraAtivo) return; // não existe posição aqui
+    total += capacidadePosicao(c.numero);
+  });
+  return total;
 }
 
 /* Regra de FIFO: dentro de cada rua/lado, o andar 1 deve ser preenchido
@@ -1091,7 +1117,8 @@ function renderProximosASair(){
 function encontrarPrimeiraVagaLivre(rua, lado, andar){
   for(const c of RACK.cells){
     if(c.isExtra && !andarTemExtra(andar)) continue;
-    for(const p of [1,2]){
+    const paletesDaPosicao = c.numero === 1 ? [1] : [1, 2]; // posição 01 só tem P1
+    for(const p of paletesDaPosicao){
       const key = cellCode(rua, lado, andar, c.numero, p);
       if(!OCUPACAO_MAP[key]) return { posicao: c.numero, palete: p };
     }
@@ -1239,7 +1266,7 @@ function calcularOcupacaoPorAndar(){
   return ANDARES.map(andar => {
     let ocupados = 0;
     RUAS.forEach(rua => rua.lados.forEach(lado => { ocupados += paletesOcupados(rua.numero, lado, andar); }));
-    const capacidade = posicoesPorAndar(andar) * PALETES_POR_POSICAO;
+    const capacidade = RUAS.reduce((sum, rua) => sum + rua.lados.length * paletesTotaisNoAndar(andar), 0);
     return { label: `Andar ${andar}`, ocupados, capacidade };
   });
 }
@@ -1337,12 +1364,12 @@ function renderEstoquePorProduto(){
 function renderKPIs(){
   const capNesteAndar = posicoesPorAndar(andarAtual);
   const capTotalPosicoes = ANDARES.reduce((sum,a)=> sum + posicoesPorAndar(a), 0);
-  const capTotalPaletes = capTotalPosicoes * PALETES_POR_POSICAO;
+  const capTotalPaletes = ANDARES.reduce((sum,a)=> sum + RUAS.reduce((s,r)=> s + r.lados.length * paletesTotaisNoAndar(a), 0), 0);
   document.getElementById('kpiRow').innerHTML = `
     <div class="kpi-card"><div class="lbl">Ruas</div><div class="val">${RUAS.length}</div></div>
     <div class="kpi-card"><div class="lbl">Posições no andar ${andarAtual}</div><div class="val">${capNesteAndar}</div></div>
     <div class="kpi-card"><div class="lbl">Posições — câmara toda</div><div class="val">${capTotalPosicoes.toLocaleString('pt-BR')}</div></div>
-    <div class="kpi-card"><div class="lbl">Capacidade em paletes (×2)</div><div class="val">${capTotalPaletes.toLocaleString('pt-BR')}</div></div>
+    <div class="kpi-card"><div class="lbl">Capacidade em paletes</div><div class="val">${capTotalPaletes.toLocaleString('pt-BR')}</div></div>
   `;
 }
 
