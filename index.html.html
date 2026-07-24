@@ -350,6 +350,16 @@
     background:var(--bg-soft); border:1px solid var(--ice-line); border-radius:7px;
     padding:7px 10px; font-size:12px; font-family:'Consolas', monospace; color:var(--text);
   }
+  .entrada-familia-auto{
+    display:flex; align-items:center; gap:8px; background:var(--bg-soft); border:1px solid var(--ice-line);
+    border-radius:8px; padding:9px 12px; flex-wrap:wrap;
+  }
+  .entrada-familia-nome{ font-size:12.5px; font-weight:700; color:var(--text); }
+  .entrada-familia-tag{ font-size:10px; color:var(--text-soft); text-transform:uppercase; letter-spacing:0.5px; }
+  .entrada-familia-trocar{
+    margin-left:auto; background:none; border:none; color:var(--frost); font-size:11px;
+    text-decoration:underline; cursor:pointer; font-family:inherit;
+  }
 
   @media (max-width:900px){
     .layout{ flex-direction:column; }
@@ -464,6 +474,7 @@
       </div>
       <div id="cargaResumo" class="carga-resumo"></div>
       <div id="cargaLista" class="carga-lista"></div>
+      <div id="cargaRevisaoMistos"></div>
       <div class="carga-acoes">
         <button id="btnLimparCarga" class="btn-sync btn-secundario">🗑 Limpar carga</button>
         <button id="btnGerarPdf" class="btn-sync">📄 Gerar PDF da carga</button>
@@ -502,6 +513,9 @@
           <span class="cr-qtd" id="entradaQtdValor">1</span>
           <button class="cr-step-btn" id="entradaQtdMais" type="button">+</button>
         </div>
+
+        <label class="entrada-label">Data de produção</label>
+        <input type="date" id="entradaDataProducao" class="entrada-data-input">
 
         <label class="entrada-label">Data de entrada</label>
         <input type="date" id="entradaData" class="entrada-data-input">
@@ -690,6 +704,7 @@ function normalizeOcupacaoRow(row){
   // fecha o palete inteiro — nesse caso a planilha registra
   // "Produto 1, Produto 2, Produto 3" no mesmo campo PRODUTO
   const produtos = produto ? produto.split(',').map(p => p.trim()).filter(Boolean) : [];
+  const dataProducao = (row['DATA DE PRODUÇÃO'] || row['DATA DE PRODUCAO'] || row['DATA PRODUCAO'] || '').trim();
   const dataEntrada = (row['DATA ENTRADA'] || '').trim();
   const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
 
@@ -703,7 +718,7 @@ function normalizeOcupacaoRow(row){
   if(faltando.length){
     return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
   }
-  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataEntrada, dataSaida, ocupado: !dataSaida } };
+  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, ocupado: !dataSaida } };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -721,7 +736,11 @@ async function carregarDados(){
     const ocupRows = parseCSV(ocupTxt);
     FAMILIAS_CATALOGO = parseCSV(famTxt);
     PRODUTOS_CATALOGO = parseCSV(prodTxt)
-      .map(r => ({ codigo: (r['CODIGO'] || '').trim(), descricao: (r['DESCRICAO'] || r['DESCRIÇÃO'] || '').trim() }))
+      .map(r => ({
+        codigo: (r['CODIGO'] || '').trim(),
+        descricao: (r['DESCRICAO'] || r['DESCRIÇÃO'] || '').trim(),
+        familia: (r['FAMILIA'] || r['FAMÍLIA'] || '').trim(),
+      }))
       .filter(p => p.descricao);
 
     // linha 1 da planilha é o cabeçalho, então a linha real de cada item
@@ -824,8 +843,8 @@ function renderRackSvg(rua, lado, andar){
     const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
     const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
     const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
-    const dataP1 = ocupP1 ? `${codeP1} · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP1.produtos)) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
-    const dataP2 = ocupP2 ? `${codeP2} · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP2.produtos)) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
+    const dataP1 = ocupP1 ? `${codeP1} · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP1.produtos)) : ''}${ocupP1.dataProducao ? ' · produzido ' + escapeHtml(ocupP1.dataProducao) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
+    const dataP2 = ocupP2 ? `${codeP2} · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP2.produtos)) : ''}${ocupP2.dataProducao ? ' · produzido ' + escapeHtml(ocupP2.dataProducao) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
     const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
 
     // com busca ativa: posições cujo produto combina ficam com contorno
@@ -1411,6 +1430,7 @@ function limparCarga(){
   if(CARGA_ITENS.length === 0) return;
   if(!confirm('Limpar toda a carga montada até agora?')) return;
   CARGA_ITENS = [];
+  document.getElementById('cargaRevisaoMistos').innerHTML = '';
   renderCargaTudo();
 }
 
@@ -1506,6 +1526,8 @@ function renderCargaLista(){
 function renderCargaTudo(){
   renderListaProdutosCarga();
   renderCargaLista();
+  const revisao = document.getElementById('cargaRevisaoMistos');
+  if(revisao) revisao.innerHTML = ''; // a carga mudou, qualquer revisão pendente ficou desatualizada
 }
 
 /* Gera o romaneio em PDF: pra cada produto da carga, lista os paletes
@@ -1576,6 +1598,34 @@ function gerarPDFCarga(){
    nas linhas correspondentes da aba "Ocupação". Usa a MESMA função
    selecionarPaletesParaProduto do PDF, então os paletes confirmados são
    exatamente os mesmos que saíram impressos no romaneio. */
+/* Agrupa os paletes escolhidos pela carga (um por endereço físico, mesmo
+   que dois itens da carga apontem pro mesmo palete misto), e marca quais
+   ficaram "ambíguos": paletes mistos onde nem todo produto que ele carrega
+   está na carga — nesse caso não dá pra saber sozinho se o palete inteiro
+   sai ou só a parte pedida, então isso vira pergunta pro usuário. */
+function montarPaletesDaCarga(){
+  const mapa = {};
+  CARGA_ITENS.forEach(item=>{
+    selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(p=>{
+      const key = `${p.rua}-${p.lado}-${p.andar}-${p.posicao}-${p.palete}`;
+      if(!mapa[key]){
+        mapa[key] = { rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set() };
+      }
+      mapa[key].produtosRetirar.add(item.produto);
+    });
+  });
+  return Object.values(mapa).map(e=>{
+    const produtosQueFicam = e.produtosOriginais.filter(p => !e.produtosRetirar.has(p));
+    return {
+      rua: e.rua, lado: e.lado, andar: e.andar, posicao: e.posicao, palete: e.palete,
+      produtosOriginais: e.produtosOriginais,
+      produtosRetirar: [...e.produtosRetirar],
+      ambiguo: produtosQueFicam.length > 0,
+      tipo: produtosQueFicam.length > 0 ? 'parcial' : 'completo', // sugestão inicial
+    };
+  });
+}
+
 async function confirmarCargaRetirada(){
   if(CARGA_ITENS.length === 0) return;
 
@@ -1584,25 +1634,85 @@ async function confirmarCargaRetirada(){
     return;
   }
 
-  const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0);
-  if(!confirm(`Confirmar a retirada de ${totalPaletes} palete(s)?\n\nIsso vai preencher a DATA SAÍDA de hoje (${new Date().toLocaleDateString('pt-BR')}) nessas linhas da planilha. Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
+  const paletes = montarPaletesDaCarga();
+  const ambiguos = paletes.filter(p => p.ambiguo);
+
+  if(ambiguos.length > 0){
+    mostrarRevisaoPaletesMistos(paletes);
+    return; // espera a decisão da pessoa pra cada palete misto antes de seguir
+  }
+
+  await enviarConfirmacaoCarga(paletes);
+}
+
+/* Mostra, pra cada palete misto ambíguo, o que está indo na carga e o que
+   ele também carrega — a pessoa escolhe se leva o palete inteiro ou só o
+   que foi pedido (deixando o resto na câmara, posição continua ocupada). */
+function mostrarRevisaoPaletesMistos(paletes){
+  const el = document.getElementById('cargaRevisaoMistos');
+  const ambiguos = paletes.filter(p => p.ambiguo);
+
+  el.innerHTML = `
+    <div class="carga-aviso" style="border-color:var(--frost-dim);color:var(--frost);background:rgba(143,227,240,0.06);margin-bottom:12px;">
+      ⚠ ${ambiguos.length} palete(s) misto(s) nessa carga — confirme o que sai de cada um antes de seguir.
+    </div>
+    <div class="entrada-vagas-lista" style="margin-bottom:12px;">
+      ${ambiguos.map((p, i)=>{
+        const ladoTxt = p.lado === 'U' ? '' : ` Lado ${p.lado}`;
+        const ficam = p.produtosOriginais.filter(x => !p.produtosRetirar.includes(x));
+        return `
+          <div class="entrada-vaga-row" style="display:block;line-height:1.6;">
+            <strong>Rua ${p.rua}${ladoTxt} · Andar ${p.andar} · Pos.${String(p.posicao).padStart(2, '0')}-P${p.palete}</strong><br>
+            Na carga: ${escapeHtml(p.produtosRetirar.join(', '))}<br>
+            Também tem nesse palete: ${escapeHtml(ficam.join(', '))}
+            <div style="margin-top:6px;">
+              <label style="display:block;margin-bottom:4px;"><input type="radio" name="misto_${i}" value="parcial" checked> Retirar só o que está na carga (o resto fica na câmara)</label>
+              <label style="display:block;"><input type="radio" name="misto_${i}" value="completo"> Retirar o palete inteiro</label>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button id="btnCancelarRevisaoMistos" class="btn-sync btn-secundario">Cancelar</button>
+      <button id="btnConfirmarRevisaoMistos" class="btn-sync btn-confirmar">✅ Confirmar retirada</button>
+    </div>
+  `;
+
+  document.getElementById('btnCancelarRevisaoMistos').addEventListener('click', ()=>{ el.innerHTML = ''; });
+  document.getElementById('btnConfirmarRevisaoMistos').addEventListener('click', async ()=>{
+    ambiguos.forEach((p, i)=>{
+      const escolhido = document.querySelector(`input[name="misto_${i}"]:checked`).value;
+      p.tipo = escolhido;
+    });
+    el.innerHTML = '';
+    await enviarConfirmacaoCarga(paletes);
+  });
+}
+
+/* Manda o lote definitivo pro Apps Script. Paletes "completo" preenchem a
+   DATA SAÍDA (posição libera). Paletes "parcial" só tiram os produtos
+   pedidos da lista da coluna PRODUTO daquela linha — a posição continua
+   ocupada, porque ainda sobrou produto físico nela. */
+async function enviarConfirmacaoCarga(paletes){
+  if(!confirm(`Confirmar a retirada de ${paletes.length} palete(s)?\n\nIsso atualiza a planilha agora mesmo (via Apps Script). Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
 
   const btn = document.getElementById('btnConfirmarCarga');
   const textoOriginal = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Confirmando…';
 
-  const paletes = [];
-  CARGA_ITENS.forEach(item=>{
-    selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(p=>{
-      paletes.push({ produto: item.produto, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete });
-    });
-  });
-
   try{
     const resp = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
-      body: JSON.stringify({ token: APPS_SCRIPT_TOKEN, paletes })
+      body: JSON.stringify({
+        token: APPS_SCRIPT_TOKEN,
+        paletes: paletes.map(p => ({
+          rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete,
+          tipo: p.tipo, produtosRetirar: p.produtosRetirar,
+          produto: p.produtosRetirar.join(', '),
+        })),
+      }),
     });
     const resultado = await resp.json();
 
@@ -1613,10 +1723,10 @@ async function confirmarCargaRetirada(){
 
     const falhas = resultado.resultados.filter(r => !r.ok);
     if(falhas.length){
-      alert(`${resultado.resultados.length - falhas.length} de ${resultado.resultados.length} paletes confirmados.\n\n${falhas.length} não foram encontrados na planilha (confira manualmente — pode ser um palete misto que outro item da carga já tinha confirmado):\n\n` +
+      alert(`${resultado.resultados.length - falhas.length} de ${resultado.resultados.length} paletes processados.\n\n${falhas.length} não foram encontrados na planilha (confira manualmente):\n\n` +
         falhas.map(f => `• ${f.endereco} (${f.produto})`).join('\n'));
     } else {
-      alert(`✅ ${resultado.resultados.length} palete(s) confirmados! A DATA SAÍDA de hoje foi registrada na planilha.`);
+      alert(`✅ ${resultado.resultados.length} palete(s) processados! A planilha já foi atualizada.`);
     }
 
     CARGA_ITENS = [];
@@ -1646,6 +1756,17 @@ function listaProdutosCatalogoFiltrada(){
 
 function familiasConhecidas(){
   return [...new Set(OCUPACAO_REGISTROS.filter(r => r.ocupado && r.familia).map(r => r.familia))].sort();
+}
+
+/* Família do produto, na ordem de confiança: 1) cadastrada no catálogo
+   (aba "Produtos", coluna FAMÍLIA) — mais confiável, cobre até produto
+   que nunca entrou na câmara ainda; 2) histórico de paletes já
+   registrados desse mesmo produto. Se nenhuma das duas achar nada,
+   quem decide é a pessoa mesmo, no seletor manual. */
+function familiaAutomaticaDoProduto(produto){
+  const doCatalogo = PRODUTOS_CATALOGO.find(p => p.descricao === produto && p.familia);
+  if(doCatalogo) return doCatalogo.familia;
+  return familiaDoProduto(produto);
 }
 
 /* Simula, palete por palete, onde a família deveria guardar os próximos
@@ -1714,15 +1835,39 @@ function renderListaProdutosEntrada(){
 }
 
 function renderFamiliaEntrada(){
+  const sugerida = familiaAutomaticaDoProduto(ENTRADA_PRODUTO);
+  if(sugerida){
+    mostrarFamiliaAutomatica(sugerida);
+  } else {
+    mostrarSeletorFamilia();
+  }
+}
+
+function mostrarFamiliaAutomatica(familia){
   const wrap = document.getElementById('entradaFamiliaWrap');
-  const sugerida = familiaDoProduto(ENTRADA_PRODUTO); // se o produto já tem histórico, puxa a família dele
+  const cor = familyColor(familia);
+  wrap.innerHTML = `
+    <div class="entrada-familia-auto">
+      <span class="estoque-swatch" style="background:${cor}"></span>
+      <span class="entrada-familia-nome">${escapeHtml(familia)}</span>
+      <span class="entrada-familia-tag">identificado automaticamente</span>
+      <button type="button" id="btnTrocarFamilia" class="entrada-familia-trocar">trocar</button>
+    </div>
+    <input type="hidden" id="entradaFamiliaValor" value="${escapeHtml(familia)}">
+  `;
+  document.getElementById('btnTrocarFamilia').addEventListener('click', mostrarSeletorFamilia);
+}
+
+function mostrarSeletorFamilia(){
+  const wrap = document.getElementById('entradaFamiliaWrap');
   const conhecidas = familiasConhecidas();
   wrap.innerHTML = `
     <select id="entradaFamiliaSelect" class="entrada-select">
-      ${conhecidas.map(f => `<option value="${escapeHtml(f)}" ${f === sugerida ? 'selected' : ''}>${escapeHtml(f)}</option>`).join('')}
-      <option value="__nova__" ${!sugerida ? 'selected' : ''}>+ nova família…</option>
+      <option value="">Selecione…</option>
+      ${conhecidas.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('')}
+      <option value="__nova__">+ nova família…</option>
     </select>
-    <input type="text" id="entradaFamiliaNova" class="entrada-select" placeholder="Nome da nova família" style="display:${sugerida ? 'none' : 'block'};margin-top:6px;">
+    <input type="text" id="entradaFamiliaNova" class="entrada-select" placeholder="Nome da nova família" style="display:none;margin-top:6px;">
   `;
   document.getElementById('entradaFamiliaSelect').addEventListener('change', e => {
     document.getElementById('entradaFamiliaNova').style.display = e.target.value === '__nova__' ? 'block' : 'none';
@@ -1730,6 +1875,8 @@ function renderFamiliaEntrada(){
 }
 
 function familiaEntradaEscolhida(){
+  const valorAuto = document.getElementById('entradaFamiliaValor');
+  if(valorAuto) return valorAuto.value;
   const sel = document.getElementById('entradaFamiliaSelect');
   if(!sel) return '';
   if(sel.value === '__nova__') return document.getElementById('entradaFamiliaNova').value.trim();
@@ -1778,9 +1925,12 @@ async function confirmarEntrada(){
   if(ENTRADA_VAGAS.length === 0) return;
   const familia = familiaEntradaEscolhida();
   if(!familia){ alert('Escolha ou digite uma família antes de confirmar.'); return; }
+  const dataProducaoInput = document.getElementById('entradaDataProducao').value;
+  if(!dataProducaoInput){ alert('Escolha a data de produção do item.'); return; }
   const dataInput = document.getElementById('entradaData').value;
   if(!dataInput){ alert('Escolha a data de entrada.'); return; }
-  const dataBR = dataInput.split('-').reverse().join('/'); // yyyy-mm-dd -> dd/mm/yyyy
+  const dataProducaoBR = dataProducaoInput.split('-').reverse().join('/'); // yyyy-mm-dd -> dd/mm/yyyy
+  const dataBR = dataInput.split('-').reverse().join('/');
 
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
     alert('A gravação automática ainda não foi configurada (falta a URL do Apps Script).');
@@ -1802,7 +1952,7 @@ async function confirmarEntrada(){
         entradas: ENTRADA_VAGAS.map(v => ({
           familia, produto: ENTRADA_PRODUTO,
           rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
-          dataEntrada: dataBR,
+          dataProducao: dataProducaoBR, dataEntrada: dataBR,
         })),
       }),
     });
