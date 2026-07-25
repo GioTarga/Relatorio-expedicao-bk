@@ -501,6 +501,15 @@
       </div>
       <div class="carga-dica">Toque num produto (ou arraste, no computador) pra adicionar 1 palete à carga.</div>
       <div id="listaProdutosCarga" class="carga-produtos-lista"></div>
+
+      <div class="carga-panel-title" style="margin-top:22px;">Ou buscar palete pelo código</div>
+      <div class="busca-row">
+        <span class="busca-ico">📦</span>
+        <input type="text" id="buscaCodigoPalete" class="busca-input" placeholder="Código do palete (ex.: 20260725-1432)…" autocomplete="off">
+        <button id="btnBuscarCodigoPalete" class="btn-sync" style="padding:8px 14px;">Buscar</button>
+      </div>
+      <div class="carga-dica">Útil pra paletes mistos — acha de uma vez todos os produtos daquele palete, sem precisar buscar um por um. No futuro dá pra bipar em vez de digitar.</div>
+      <div id="resultadoBuscaCodigo"></div>
     </div>
 
     <div class="carga-col-caminhao">
@@ -533,7 +542,18 @@
 </div>
 
 <div id="viewEntrada" class="container" style="display:none;">
-  <div class="carga-layout">
+  <div class="carga-panel-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+    <span>Que tipo de entrada é essa?</span>
+    <div style="display:flex;gap:8px;">
+      <button id="btnModoSimples" class="btn-sync btn-confirmar" type="button" style="padding:7px 14px;">Palete simples</button>
+      <button id="btnModoMisto" class="btn-sync btn-secundario" type="button" style="padding:7px 14px;">Palete misto</button>
+    </div>
+  </div>
+  <div class="carga-dica" style="margin-bottom:14px;">
+    <strong>Palete simples</strong>: um produto só, um ou mais paletes iguais. <strong>Palete misto</strong>: um único palete físico com produtos diferentes (cada um com sua quantidade de pacotes) — todos ganham o mesmo código de rastreio.
+  </div>
+
+  <div class="carga-layout" id="layoutEntradaSimples">
 
     <div class="carga-col-produtos">
       <div class="carga-panel-title">Produto que está entrando</div>
@@ -560,6 +580,9 @@
           <button class="cr-step-btn" id="entradaQtdMais" type="button">+</button>
         </div>
 
+        <label class="entrada-label">Pacotes por palete</label>
+        <input type="number" min="1" id="entradaPacotes" class="entrada-data-input" placeholder="ex.: 170">
+
         <label class="entrada-label">Data de produção</label>
         <input type="date" id="entradaDataProducao" class="entrada-data-input">
 
@@ -574,6 +597,41 @@
       </div>
 
       <div class="carga-aviso" style="margin-top:16px;">⚠ As posições são sugeridas automaticamente (mesma regra de FIFO do "Onde guardar"). "Confirmar entrada" grava direto na planilha via Apps Script.</div>
+    </div>
+
+  </div>
+
+  <div class="carga-layout" id="layoutEntradaMisto" style="display:none;">
+
+    <div class="carga-col-produtos">
+      <div class="carga-panel-title">Produtos desse palete</div>
+      <div class="busca-row">
+        <span class="busca-ico">🔍</span>
+        <input type="text" id="buscaEntradaMistoProduto" class="busca-input" placeholder="Buscar por nome ou código…" autocomplete="off">
+      </div>
+      <div class="carga-dica">Toque num produto pra adicionar ele à lista do palete misto, ao lado — com a quantidade de pacotes dele.</div>
+      <div id="listaProdutosEntradaMisto" class="carga-produtos-lista"></div>
+    </div>
+
+    <div class="carga-col-caminhao">
+      <div class="carga-panel-title">Produtos adicionados a esse palete</div>
+      <div id="listaItensPaleteMisto"></div>
+
+      <div id="entradaMistoCampos" style="display:none;">
+        <label class="entrada-label">Data de produção</label>
+        <input type="date" id="entradaMistoDataProducao" class="entrada-data-input">
+
+        <label class="entrada-label">Data de entrada</label>
+        <input type="date" id="entradaMistoData" class="entrada-data-input">
+
+        <button id="btnCalcularVagaMisto" class="btn-sync" style="margin-top:14px;">📍 Calcular posição do palete</button>
+
+        <div id="entradaVagaMistoPreview"></div>
+
+        <button id="btnConfirmarEntradaMisto" class="btn-sync btn-confirmar" style="display:none;margin-top:12px;">✅ Confirmar entrada do palete misto</button>
+      </div>
+
+      <div class="carga-aviso" style="margin-top:16px;">⚠ Palete misto ocupa 1 vaga só — todos os produtos adicionados aqui vão pro mesmo endereço, com o mesmo código de rastreio.</div>
     </div>
 
   </div>
@@ -660,15 +718,23 @@ let ultimaAtualizacao = null;
 let FILTRO_PRODUTO = '';       // texto de busca (minúsculo, sem espaço nas pontas) — aba do mapa
 let OCUPACAO_VISAO = 'camara'; // 'camara' | 'rua' | 'andar' — modo do painel de ocupação
 let FILTRO_CARGA = '';         // texto de busca — aba Montar Carga
-let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montagem (só em memória, não mexe na planilha)
+let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montagem via busca por produto (FIFO)
+let CARGA_ITENS_LINHA = [];    // [{ linha, produto, rua, lado, andar, posicao, palete, pacotes, produtosOriginais }] — linhas exatas adicionadas via código de palete (bipagem)
+let BUSCA_CODIGO_RESULTADO = null; // resultado da última busca por código de palete, aguardando escolha de quais produtos entram na carga
 let ULTIMA_CARGA_CONFIRMADA = null; // retrato da última carga confirmada, pra poder reimprimir o PDF depois
 
 let PRODUTOS_CATALOGO = [];    // [{ codigo, descricao }] — catálogo oficial vindo do CIGAM (aba "Produtos")
-let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada
+let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada (modo simples)
+let FILTRO_ENTRADA_MISTO = ''; // texto de busca — aba Nova Entrada (modo palete misto)
 let ENTRADA_PRODUTO = null;    // descrição do produto selecionado na Nova Entrada
 let ENTRADA_PRODUTO_CODIGO = ''; // código do produto selecionado (catálogo CIGAM)
 let ENTRADA_QTD = 1;
+let ENTRADA_PACOTES = null;    // pacotes por palete (modo simples) — mesmo valor pra todos os paletes do lote
 let ENTRADA_VAGAS = [];        // posições sugeridas calculadas pro lote atual
+
+let ENTRADA_MODO = 'simples';  // 'simples' (1 produto, N paletes iguais) | 'misto' (1 palete só, vários produtos diferentes)
+let ITENS_PALETE_MISTO = [];   // [{ produto, codigo, familia, pacotes }] — produtos adicionados ao palete misto em montagem
+let VAGA_MISTO = null;         // única vaga calculada pro palete misto (é sempre 1 palete físico só)
 
 /* Confere se algum produto de um palete bate com a busca ativa.
    Sem busca ativa, tudo "combina" (não filtra nada). */
@@ -774,6 +840,11 @@ function normalizeOcupacaoRow(row){
   const dataProducao = (row['DATA DE PRODUÇÃO'] || row['DATA DE PRODUCAO'] || row['DATA PRODUCAO'] || '').trim();
   const dataEntrada = (row['DATA ENTRADA'] || '').trim();
   const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
+  // colunas novas — opcionais, pra continuar lendo sem erro linhas antigas
+  // lançadas antes delas existirem na planilha
+  const pacotesTxt = (row['PACOTES'] || '').toString().trim();
+  const pacotes = pacotesTxt ? parseInt(pacotesTxt, 10) : null;
+  const codigoPalete = (row['CÓDIGO DE RASTREIO'] || row['CODIGO DE RASTREIO'] || row['CÓDIGO PALETE'] || row['CODIGO PALETE'] || '').trim();
 
   const faltando = [];
   if(!rua) faltando.push('RUA');
@@ -785,7 +856,18 @@ function normalizeOcupacaoRow(row){
   if(faltando.length){
     return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
   }
-  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, ocupado: !dataSaida } };
+  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, ocupado: !dataSaida } };
+}
+
+/* Recebe o resultado de normalizeOcupacaoRow e "carimba" o número real da
+   linha na planilha (1 = cabeçalho, então a primeira linha de dado é a 2).
+   Isso vira o identificador único de cada registro daqui pra frente —
+   diferente do endereço (rua-lado-andar-posição-palete), que pode se
+   repetir por erro de apontamento (duas linhas diferentes anotadas na
+   mesma vaga). Sem isso, o app não tem como distinguir "a mesma linha
+   escolhida duas vezes" de "duas linhas diferentes com endereço igual". */
+function comNumeroDaLinha(data, numeroLinha){
+  return { ...data, linha: numeroLinha };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -817,7 +899,7 @@ async function carregarDados(){
     LINHAS_IGNORADAS = [];
     ocupRows.forEach((row, i)=>{
       const resultado = normalizeOcupacaoRow(row);
-      if(resultado.ok) OCUPACAO_REGISTROS.push(resultado.data);
+      if(resultado.ok) OCUPACAO_REGISTROS.push(comNumeroDaLinha(resultado.data, i + 2));
       else LINHAS_IGNORADAS.push({ linha: i + 2, motivo: resultado.motivo });
     });
 
@@ -836,7 +918,13 @@ async function carregarDados(){
     OCUPACAO_CONFLITOS_SET = new Set();
     Object.entries(porChave).forEach(([key, regs])=>{
       OCUPACAO_MAP[key] = regs[regs.length-1]; // usa o mais recente pra colorir/mostrar
-      if(regs.length > 1){
+      // mais de 1 registro no mesmo endereço só é erro de apontamento se
+      // eles NÃO tiverem todos o mesmo código de palete preenchido — se
+      // tiverem, é um palete misto de verdade (vários produtos, cada um
+      // com sua própria linha, mesmo código de rastreio)
+      const codigos = new Set(regs.map(r => r.codigoPalete).filter(Boolean));
+      const todosComMesmoCodigo = codigos.size === 1 && regs.every(r => r.codigoPalete === regs[0].codigoPalete);
+      if(regs.length > 1 && !todosComMesmoCodigo){
         OCUPACAO_CONFLITOS.push({ key, registros: regs });
         OCUPACAO_CONFLITOS_SET.add(key);
       }
@@ -1897,6 +1985,39 @@ function selecionarPaletesParaProduto(produto, quantidade){
   return candidatos.slice(0, quantidade);
 }
 
+/* Acha todas as linhas ocupadas com um determinado código de palete —
+   usado pela busca/bipagem na aba Saída de Produto. Comparação sem
+   diferenciar maiúsculas/minúsculas e sem espaço nas pontas, pra tolerar
+   leitor de código de barras que às vezes manda espaço extra. */
+function buscarRegistrosPorCodigoPalete(codigo){
+  const alvo = codigo.trim().toLowerCase();
+  if(!alvo) return [];
+  return OCUPACAO_REGISTROS.filter(r => r.ocupado && r.codigoPalete && r.codigoPalete.trim().toLowerCase() === alvo);
+}
+
+/* Junta os dois jeitos de escolher o que sai na carga — busca por
+   produto (FIFO, em CARGA_ITENS) e linhas exatas adicionadas via código
+   de palete (em CARGA_ITENS_LINHA) — numa lista só de "unidades": cada
+   uma é 1 linha real da planilha + qual produto dela está sendo retirado
+   (produtoAlvo). É a partir dessa lista única que o PDF e a confirmação
+   de saída são montados, então os dois caminhos sempre se comportam do
+   mesmo jeito dali pra frente. */
+function unidadesSelecionadasNaCarga(){
+  const unidades = [];
+  CARGA_ITENS.forEach(item=>{
+    selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(r=>{
+      unidades.push({ ...r, produtoAlvo: item.produto });
+    });
+  });
+  CARGA_ITENS_LINHA.forEach(entrada=>{
+    // busca a versão mais atual do registro (caso os dados tenham sido
+    // resincronizados desde que o código foi bipado), pelo número da linha
+    const atual = OCUPACAO_REGISTROS.find(r => r.linha === entrada.linha && r.ocupado);
+    if(atual) unidades.push({ ...atual, produtoAlvo: entrada.produto });
+  });
+  return unidades;
+}
+
 function adicionarProdutoNaCarga(produto){
   const disponivel = estoqueDisponivelProduto(produto);
   if(disponivel === 0) return;
@@ -1923,11 +2044,43 @@ function removerDaCarga(produto){
   renderCargaTudo();
 }
 
+/* Busca por código de palete (aba Saída de Produto) — mostra os produtos
+   daquele palete pra pessoa escolher quais entram na carga, em vez de
+   remontar isso por conta própria pelo endereço. */
+function executarBuscaCodigoPalete(codigo){
+  const registros = buscarRegistrosPorCodigoPalete(codigo);
+  BUSCA_CODIGO_RESULTADO = { codigo: codigo.trim(), registros, naoEncontrado: registros.length === 0 };
+  renderResultadoBuscaCodigo();
+}
+
+function adicionarLinhaDaCargaPorCodigo(linha, produto){
+  const registro = OCUPACAO_REGISTROS.find(r => r.linha === linha && r.ocupado);
+  if(!registro) return;
+  const jaAdicionado = CARGA_ITENS_LINHA.some(e => e.linha === linha && e.produto === produto);
+  if(jaAdicionado) return;
+  CARGA_ITENS_LINHA.push({
+    linha, produto, pacotes: registro.pacotes,
+    rua: registro.rua, lado: registro.lado, andar: registro.andar, posicao: registro.posicao, palete: registro.palete,
+    produtosOriginais: registro.produtos, codigoPalete: registro.codigoPalete,
+  });
+  renderCargaTudo();
+  flashCaminhao();
+}
+
+function removerLinhaDaCarga(linha, produto){
+  CARGA_ITENS_LINHA = CARGA_ITENS_LINHA.filter(e => !(e.linha === linha && e.produto === produto));
+  renderCargaTudo();
+}
+
 function limparCarga(){
-  if(CARGA_ITENS.length === 0) return;
+  if(CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0) return;
   if(!confirm('Limpar toda a carga montada até agora?')) return;
   CARGA_ITENS = [];
+  CARGA_ITENS_LINHA = [];
+  BUSCA_CODIGO_RESULTADO = null;
   document.getElementById('cargaRevisaoMistos').innerHTML = '';
+  const resultadoEl = document.getElementById('resultadoBuscaCodigo');
+  if(resultadoEl) resultadoEl.innerHTML = '';
   renderCargaTudo();
 }
 
@@ -1977,7 +2130,8 @@ function renderCargaLista(){
   const listaEl = document.getElementById('cargaLista');
   const resumoEl = document.getElementById('cargaResumo');
 
-  if(CARGA_ITENS.length === 0){
+  const vazia = CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0;
+  if(vazia){
     listaEl.innerHTML = `<div class="carga-vazio">Nenhum produto adicionado ainda.</div>`;
     resumoEl.innerHTML = '';
     document.getElementById('btnGerarPdf').disabled = true;
@@ -1990,10 +2144,22 @@ function renderCargaLista(){
   document.getElementById('btnLimparCarga').disabled = false;
   document.getElementById('btnConfirmarCarga').disabled = false;
 
-  const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0);
-  resumoEl.innerHTML = `<strong>${totalPaletes}</strong> palete${totalPaletes===1?'':'s'} · <strong>${CARGA_ITENS.length}</strong> produto${CARGA_ITENS.length===1?'':'s'} diferente${CARGA_ITENS.length===1?'':'s'}`;
+  const totalPaletes = CARGA_ITENS.reduce((s,i)=> s + i.quantidade, 0) + CARGA_ITENS_LINHA.length;
+  const totalProdutos = CARGA_ITENS.length + CARGA_ITENS_LINHA.length;
+  resumoEl.innerHTML = `<strong>${totalPaletes}</strong> palete${totalPaletes===1?'':'s'} · <strong>${totalProdutos}</strong> produto${totalProdutos===1?'':'s'} diferente${totalProdutos===1?'':'s'}`;
 
-  listaEl.innerHTML = CARGA_ITENS.map(item=>{
+  const linhasBusca = CARGA_ITENS_LINHA.map(entrada=>{
+    const familia = familiaDoProduto(entrada.produto);
+    const cor = familia ? familyColor(familia) : 'var(--text-soft)';
+    const ladoTxt = entrada.lado === 'U' ? '' : ` Lado ${entrada.lado}`;
+    return `<div class="carga-row">
+      <span class="estoque-swatch" style="background:${cor}"></span>
+      <span class="cr-nome">${escapeHtml(entrada.produto)}<br><small style="opacity:.65;">Rua ${entrada.rua}${ladoTxt} · And.${entrada.andar} · Pos.${String(entrada.posicao).padStart(2,'0')}-P${entrada.palete} · código ${escapeHtml(entrada.codigoPalete || '—')}</small></span>
+      <button class="cr-remover" data-acao="remover-linha" data-linha="${entrada.linha}" data-produto="${escapeHtml(entrada.produto)}" title="Remover">✕</button>
+    </div>`;
+  }).join('');
+
+  const linhasProduto = CARGA_ITENS.map(item=>{
     const disponivel = estoqueDisponivelProduto(item.produto);
     const familia = familiaDoProduto(item.produto);
     const cor = familia ? familyColor(familia) : 'var(--text-soft)';
@@ -2009,6 +2175,8 @@ function renderCargaLista(){
     </div>`;
   }).join('');
 
+  listaEl.innerHTML = linhasBusca + linhasProduto;
+
   listaEl.querySelectorAll('[data-acao]').forEach(btn=>{
     const produto = btn.getAttribute('data-produto');
     const acao = btn.getAttribute('data-acao');
@@ -2016,6 +2184,41 @@ function renderCargaLista(){
       if(acao === 'mais') alterarQuantidadeCarga(produto, 1);
       else if(acao === 'menos') alterarQuantidadeCarga(produto, -1);
       else if(acao === 'remover') removerDaCarga(produto);
+      else if(acao === 'remover-linha') removerLinhaDaCarga(Number(btn.getAttribute('data-linha')), produto);
+    });
+  });
+}
+
+/* Desenha o resultado da busca por código de palete: lista os produtos
+   daquele palete com um botão "adicionar" cada, ou avisa se não achou
+   nada (código digitado errado, ou palete que já saiu). */
+function renderResultadoBuscaCodigo(){
+  const el = document.getElementById('resultadoBuscaCodigo');
+  if(!el) return;
+  if(!BUSCA_CODIGO_RESULTADO){ el.innerHTML = ''; return; }
+
+  if(BUSCA_CODIGO_RESULTADO.naoEncontrado){
+    el.innerHTML = `<div class="carga-aviso" style="margin-top:10px;">⚠ Nenhum palete ocupado encontrado com o código "${escapeHtml(BUSCA_CODIGO_RESULTADO.codigo)}".</div>`;
+    return;
+  }
+
+  const linhas = BUSCA_CODIGO_RESULTADO.registros.map(r=>{
+    const ladoTxt = r.lado === 'U' ? '' : ` Lado ${r.lado}`;
+    const jaAdicionado = CARGA_ITENS_LINHA.some(e => e.linha === r.linha && e.produto === r.produto);
+    return `<div class="entrada-vaga-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <span>${escapeHtml(r.produto)}${r.pacotes ? ` · ${r.pacotes} pacote${r.pacotes===1?'':'s'}` : ''}<br><small style="opacity:.65;">Rua ${r.rua}${ladoTxt} · And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</small></span>
+      <button class="btn-sync${jaAdicionado ? ' btn-secundario' : ''}" style="padding:6px 12px;" data-linha="${r.linha}" data-produto="${escapeHtml(r.produto)}" ${jaAdicionado ? 'disabled' : ''}>${jaAdicionado ? '✓ na carga' : '+ Adicionar'}</button>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(BUSCA_CODIGO_RESULTADO.codigo)}</strong> — ${BUSCA_CODIGO_RESULTADO.registros.length} produto${BUSCA_CODIGO_RESULTADO.registros.length===1?'':'s'}:</div>
+    <div class="entrada-vagas-lista">${linhas}</div>
+  `;
+  el.querySelectorAll('button[data-linha]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      adicionarLinhaDaCargaPorCodigo(Number(btn.getAttribute('data-linha')), btn.getAttribute('data-produto'));
+      renderResultadoBuscaCodigo();
     });
   });
 }
@@ -2031,12 +2234,15 @@ function renderCargaTudo(){
    atendem aquela quantidade), sem desenhar nada ainda. Separado da função
    de desenho porque precisa ser "congelado" no momento da confirmação —
    depois que a carga é confirmada, o estoque muda, e recalcular do zero
-   ia dar endereços diferentes (ou nenhum) do que realmente foi retirado. */
-function construirEstruturaPdf(itensCarga){
-  return itensCarga.map(item => ({
-    produto: item.produto,
-    paletes: selecionarPaletesParaProduto(item.produto, item.quantidade),
-  }));
+   ia dar endereços diferentes (ou nenhum) do que realmente foi retirado.
+   Usa a lista unificada (busca por produto + código de palete), agrupada
+   por produtoAlvo pra sair uma seção por produto no PDF, como já era. */
+function construirEstruturaPdf(){
+  const porProduto = {};
+  unidadesSelecionadasNaCarga().forEach(u=>{
+    (porProduto[u.produtoAlvo] = porProduto[u.produtoAlvo] || []).push(u);
+  });
+  return Object.entries(porProduto).map(([produto, paletes]) => ({ produto, paletes }));
 }
 
 /* Desenha o romaneio em PDF a partir de uma estrutura já pronta (ver
@@ -2151,8 +2357,8 @@ function renderizarPdfRomaneio(estrutura){
 }
 
 function gerarPDFCarga(){
-  if(CARGA_ITENS.length === 0) return;
-  renderizarPdfRomaneio(construirEstruturaPdf(CARGA_ITENS));
+  if(CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0) return;
+  renderizarPdfRomaneio(construirEstruturaPdf());
 }
 
 /* Manda a carga montada pro Apps Script, que preenche a DATA SAÍDA de hoje
@@ -2166,18 +2372,23 @@ function gerarPDFCarga(){
    sai ou só a parte pedida, então isso vira pergunta pro usuário. */
 function montarPaletesDaCarga(){
   const mapa = {};
-  CARGA_ITENS.forEach(item=>{
-    selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(p=>{
-      const key = `${p.rua}-${p.lado}-${p.andar}-${p.posicao}-${p.palete}`;
-      if(!mapa[key]){
-        mapa[key] = { rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set() };
-      }
-      mapa[key].produtosRetirar.add(item.produto);
-    });
+  unidadesSelecionadasNaCarga().forEach(p=>{
+    // chave = linha real da planilha, não o endereço. Duas seleções
+    // caem na mesma chave só quando forem literalmente a MESMA linha
+    // (ex.: um palete misto escolhido por dois produtos do carrinho).
+    // Se duas linhas diferentes tiverem o mesmo endereço por erro de
+    // apontamento, elas continuam separadas aqui — cada uma manda sua
+    // própria confirmação pro Apps Script.
+    const key = p.linha;
+    if(!mapa[key]){
+      mapa[key] = { linha: p.linha, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set() };
+    }
+    mapa[key].produtosRetirar.add(p.produtoAlvo);
   });
   return Object.values(mapa).map(e=>{
     const produtosQueFicam = e.produtosOriginais.filter(p => !e.produtosRetirar.has(p));
     return {
+      linha: e.linha,
       rua: e.rua, lado: e.lado, andar: e.andar, posicao: e.posicao, palete: e.palete,
       produtosOriginais: e.produtosOriginais,
       produtosRetirar: [...e.produtosRetirar],
@@ -2188,7 +2399,7 @@ function montarPaletesDaCarga(){
 }
 
 async function confirmarCargaRetirada(){
-  if(CARGA_ITENS.length === 0) return;
+  if(CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0) return;
 
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
     alert('A confirmação automática ainda não foi configurada.\n\nÉ preciso publicar o Apps Script e colar a URL dele na constante APPS_SCRIPT_URL, no início do código. Enquanto isso, continue registrando a DATA SAÍDA manualmente na planilha.');
@@ -2269,6 +2480,7 @@ async function enviarConfirmacaoCarga(paletes){
       body: JSON.stringify({
         token: APPS_SCRIPT_TOKEN,
         paletes: paletes.map(p => ({
+          linha: p.linha,
           rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete,
           tipo: p.tipo, produtosRetirar: p.produtosRetirar,
           produto: p.produtosRetirar.join(', '),
@@ -2294,10 +2506,14 @@ async function enviarConfirmacaoCarga(paletes){
     // planilha for resincronizada (carregarDados, logo abaixo) o estoque
     // já vai estar diferente, então recalcular do zero não serviria mais
     // pra reimprimir o mesmo romaneio
-    ULTIMA_CARGA_CONFIRMADA = construirEstruturaPdf(CARGA_ITENS);
+    ULTIMA_CARGA_CONFIRMADA = construirEstruturaPdf();
     document.getElementById('btnReimprimirPdf').style.display = '';
 
     CARGA_ITENS = [];
+    CARGA_ITENS_LINHA = [];
+    BUSCA_CODIGO_RESULTADO = null;
+    const resultadoEl = document.getElementById('resultadoBuscaCodigo');
+    if(resultadoEl) resultadoEl.innerHTML = '';
     renderCargaTudo();
     await carregarDados(); // resincroniza o mapa com a planilha já atualizada
   } catch(err){
@@ -2318,18 +2534,19 @@ async function enviarConfirmacaoCarga(paletes){
    "Onde guardar o próximo palete", e grava tudo de uma vez na planilha.
    ====================================================================== */
 
-function listaProdutosCatalogoFiltrada(){
-  if(!FILTRO_ENTRADA) return PRODUTOS_CATALOGO;
+function listaProdutosCatalogoFiltrada(filtro){
+  if(filtro === undefined) filtro = FILTRO_ENTRADA;
+  if(!filtro) return PRODUTOS_CATALOGO;
 
   // o Google Sheets costuma converter a coluna CÓDIGO pra número e comer
   // o zero à esquerda (ex: "007306" vira "7306") — por isso, além da
   // busca normal, compara também os dois lados sem zeros na frente
-  const buscaSoDigitos = /^\d+$/.test(FILTRO_ENTRADA);
-  const filtroSemZeros = FILTRO_ENTRADA.replace(/^0+/, '');
+  const buscaSoDigitos = /^\d+$/.test(filtro);
+  const filtroSemZeros = filtro.replace(/^0+/, '');
 
   return PRODUTOS_CATALOGO.filter(p => {
-    if(p.descricao.toLowerCase().includes(FILTRO_ENTRADA)) return true;
-    if(p.codigo.toLowerCase().includes(FILTRO_ENTRADA)) return true;
+    if(p.descricao.toLowerCase().includes(filtro)) return true;
+    if(p.codigo.toLowerCase().includes(filtro)) return true;
     if(buscaSoDigitos && filtroSemZeros){
       const codigoSemZeros = p.codigo.replace(/^0+/, '');
       if(codigoSemZeros === filtroSemZeros) return true;
@@ -2424,6 +2641,182 @@ function renderListaProdutosEntrada(){
   });
 }
 
+/* ===== Modo "Palete misto" — um palete só, vários produtos ===== */
+
+function renderListaProdutosEntradaMisto(){
+  const el = document.getElementById('listaProdutosEntradaMisto');
+  if(!el) return;
+  const lista = listaProdutosCatalogoFiltrada(FILTRO_ENTRADA_MISTO);
+  if(lista.length === 0){
+    el.innerHTML = `<div class="carga-vazio">${PRODUTOS_CATALOGO.length === 0 ? 'Catálogo ainda não carregado.' : 'Nenhum produto encontrado.'}</div>`;
+    return;
+  }
+  el.innerHTML = lista.map(p => `
+    <div class="produto-chip" data-descricao="${escapeHtml(p.descricao)}" data-codigo="${escapeHtml(p.codigo)}">
+      <span class="chip-nome">${escapeHtml(p.descricao)}</span>
+      <span class="chip-qtd">#${escapeHtml(p.codigo)}</span>
+    </div>
+  `).join('');
+  el.querySelectorAll('.produto-chip').forEach(chip => {
+    chip.addEventListener('click', () => adicionarItemPaleteMisto(chip.getAttribute('data-descricao'), chip.getAttribute('data-codigo')));
+  });
+}
+
+function adicionarItemPaleteMisto(descricao, codigo){
+  if(ITENS_PALETE_MISTO.some(i => i.produto === descricao)) return; // já está na lista
+  const familia = familiaAutomaticaDoProduto(descricao) || '';
+  ITENS_PALETE_MISTO.push({ produto: descricao, codigo, familia, pacotes: null });
+  renderItensPaleteMisto();
+}
+
+function removerItemPaleteMisto(produto){
+  ITENS_PALETE_MISTO = ITENS_PALETE_MISTO.filter(i => i.produto !== produto);
+  renderItensPaleteMisto();
+}
+
+function atualizarFamiliaItemPaleteMisto(produto, familia){
+  const item = ITENS_PALETE_MISTO.find(i => i.produto === produto);
+  if(item) item.familia = familia;
+}
+
+function atualizarPacotesItemPaleteMisto(produto, valor){
+  const item = ITENS_PALETE_MISTO.find(i => i.produto === produto);
+  if(item) item.pacotes = valor ? parseInt(valor, 10) : null;
+}
+
+function renderItensPaleteMisto(){
+  const el = document.getElementById('listaItensPaleteMisto');
+  const camposEl = document.getElementById('entradaMistoCampos');
+  if(ITENS_PALETE_MISTO.length === 0){
+    el.innerHTML = `<div class="carga-vazio">Nenhum produto adicionado ainda — escolha ao lado.</div>`;
+    camposEl.style.display = 'none';
+    return;
+  }
+  camposEl.style.display = '';
+  el.innerHTML = ITENS_PALETE_MISTO.map(item=>{
+    const familiasOpcoes = familiasConhecidas();
+    const semFamiliaConhecida = item.familia && !familiasOpcoes.includes(item.familia);
+    return `<div class="carga-row" style="align-items:flex-start;">
+      <div style="flex:1;min-width:160px;">
+        <div class="cr-nome">${escapeHtml(item.produto)}</div>
+        <select class="entrada-select" style="margin-top:6px;" data-acao="familia" data-produto="${escapeHtml(item.produto)}">
+          ${familiasOpcoes.map(f => `<option value="${escapeHtml(f)}" ${item.familia===f?'selected':''}>${escapeHtml(f)}</option>`).join('')}
+          ${(!item.familia || semFamiliaConhecida) ? `<option value="${escapeHtml(item.familia||'')}" selected>${item.familia ? escapeHtml(item.familia) : 'Escolher família…'}</option>` : ''}
+        </select>
+      </div>
+      <div style="width:110px;">
+        <label class="entrada-label" style="margin-top:0;">Pacotes</label>
+        <input type="number" min="1" class="entrada-data-input" value="${item.pacotes ?? ''}" placeholder="ex.: 40" data-acao="pacotes" data-produto="${escapeHtml(item.produto)}">
+      </div>
+      <button class="cr-remover" data-acao="remover-item" data-produto="${escapeHtml(item.produto)}" title="Remover">✕</button>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-acao="familia"]').forEach(sel=>{
+    sel.addEventListener('change', () => atualizarFamiliaItemPaleteMisto(sel.getAttribute('data-produto'), sel.value));
+  });
+  el.querySelectorAll('[data-acao="pacotes"]').forEach(inp=>{
+    inp.addEventListener('input', () => atualizarPacotesItemPaleteMisto(inp.getAttribute('data-produto'), inp.value));
+  });
+  el.querySelectorAll('[data-acao="remover-item"]').forEach(btn=>{
+    btn.addEventListener('click', () => removerItemPaleteMisto(btn.getAttribute('data-produto')));
+  });
+}
+
+function renderVagaMistoPreview(){
+  const elPrev = document.getElementById('entradaVagaMistoPreview');
+  const btn = document.getElementById('btnConfirmarEntradaMisto');
+  if(!VAGA_MISTO){
+    elPrev.innerHTML = `<div class="carga-vazio">Não sobrou vaga em lugar nenhum pra essa família.</div>`;
+    btn.style.display = 'none';
+    return;
+  }
+  const ladoTxt = VAGA_MISTO.lado === 'U' ? '' : ` Lado ${VAGA_MISTO.lado}`;
+  elPrev.innerHTML = `<div class="entrada-vagas-lista"><div class="entrada-vaga-row">Rua ${VAGA_MISTO.rua}${ladoTxt} · Andar ${VAGA_MISTO.andar} · Pos.${String(VAGA_MISTO.posicao).padStart(2,'0')}-P${VAGA_MISTO.palete}</div></div>`;
+  btn.style.display = '';
+}
+
+/* Gera o código do palete no MESMO formato que o Apps Script usa
+   (data/hora), só pra mostrar antes de confirmar — o valor que de fato
+   vale é o que o Apps Script grava (evita depender do relógio do
+   navegador estar certo). */
+function formatarDataHoraLocal(){
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+async function confirmarEntradaMisto(){
+  if(ITENS_PALETE_MISTO.length === 0 || !VAGA_MISTO) return;
+  const semFamilia = ITENS_PALETE_MISTO.find(i => !i.familia);
+  if(semFamilia){ alert(`Escolha a família de "${semFamilia.produto}" antes de confirmar.`); return; }
+  const semPacotes = ITENS_PALETE_MISTO.find(i => !i.pacotes || i.pacotes <= 0);
+  if(semPacotes){ alert(`Informe a quantidade de pacotes de "${semPacotes.produto}" antes de confirmar.`); return; }
+
+  const dataProducaoInput = document.getElementById('entradaMistoDataProducao').value;
+  if(!dataProducaoInput){ alert('Escolha a data de produção do lote.'); return; }
+  const dataInput = document.getElementById('entradaMistoData').value;
+  if(!dataInput){ alert('Escolha a data de entrada.'); return; }
+  const dataProducaoBR = dataProducaoInput.split('-').reverse().join('/');
+  const dataBR = dataInput.split('-').reverse().join('/');
+
+  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
+    alert('A gravação automática ainda não foi configurada (falta a URL do Apps Script).');
+    return;
+  }
+  if(!confirm(`Confirmar a entrada desse palete misto com ${ITENS_PALETE_MISTO.length} produto(s)?\n\nIsso vai criar ${ITENS_PALETE_MISTO.length} linha(s) nova(s) na planilha, todas com o mesmo código de rastreio.`)) return;
+
+  const btn = document.getElementById('btnConfirmarEntradaMisto');
+  const textoOriginal = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Registrando…';
+
+  try{
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({
+        token: APPS_SCRIPT_TOKEN,
+        acao: 'entrada',
+        entradas: ITENS_PALETE_MISTO.map(item => ({
+          familia: item.familia, produto: item.produto, codigo: item.codigo, pacotes: item.pacotes,
+          rua: VAGA_MISTO.rua, lado: VAGA_MISTO.lado, andar: VAGA_MISTO.andar, posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
+          dataProducao: dataProducaoBR, dataEntrada: dataBR,
+          grupoPalete: 0, // todos os produtos são o MESMO palete físico — mesmo código de rastreio
+        })),
+      }),
+    });
+    const resultado = await resp.json();
+
+    if(!resultado.ok){
+      alert('Não deu pra registrar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
+      return;
+    }
+
+    let msg = `✅ Palete misto registrado! ${resultado.linhas} linha(s) na planilha, código ${resultado.codigos ? resultado.codigos.join(', ') : ''}.`;
+    if(resultado.avisoFamilias) msg += `\n\n⚠ ${resultado.avisoFamilias}`;
+    alert(msg);
+    ITENS_PALETE_MISTO = [];
+    VAGA_MISTO = null;
+    renderItensPaleteMisto();
+    renderVagaMistoPreview();
+    await carregarDados();
+  } catch(err){
+    console.error('Erro ao confirmar entrada de palete misto:', err);
+    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet.\n\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = textoOriginal;
+  }
+}
+
+function alternarModoEntrada(modo){
+  ENTRADA_MODO = modo;
+  document.getElementById('layoutEntradaSimples').style.display = modo === 'simples' ? '' : 'none';
+  document.getElementById('layoutEntradaMisto').style.display = modo === 'misto' ? '' : 'none';
+  document.getElementById('btnModoSimples').className = modo === 'simples' ? 'btn-sync btn-confirmar' : 'btn-sync btn-secundario';
+  document.getElementById('btnModoMisto').className = modo === 'misto' ? 'btn-sync btn-confirmar' : 'btn-sync btn-secundario';
+}
+
 function renderFamiliaEntrada(){
   const sugerida = familiaAutomaticaDoProduto(ENTRADA_PRODUTO);
   if(sugerida){
@@ -2516,6 +2909,9 @@ async function confirmarEntrada(){
   if(ENTRADA_VAGAS.length === 0) return;
   const familia = familiaEntradaEscolhida();
   if(!familia){ alert('Escolha ou digite uma família antes de confirmar.'); return; }
+  const pacotesInput = document.getElementById('entradaPacotes').value;
+  const pacotes = pacotesInput ? parseInt(pacotesInput, 10) : null;
+  if(!pacotes || pacotes <= 0){ alert('Informe quantos pacotes tem cada palete antes de confirmar.'); return; }
   const dataProducaoInput = document.getElementById('entradaDataProducao').value;
   if(!dataProducaoInput){ alert('Escolha a data de produção do item.'); return; }
   const dataInput = document.getElementById('entradaData').value;
@@ -2540,10 +2936,11 @@ async function confirmarEntrada(){
       body: JSON.stringify({
         token: APPS_SCRIPT_TOKEN,
         acao: 'entrada',
-        entradas: ENTRADA_VAGAS.map(v => ({
-          familia, produto: ENTRADA_PRODUTO, codigo: ENTRADA_PRODUTO_CODIGO,
+        entradas: ENTRADA_VAGAS.map((v, i) => ({
+          familia, produto: ENTRADA_PRODUTO, codigo: ENTRADA_PRODUTO_CODIGO, pacotes,
           rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
           dataProducao: dataProducaoBR, dataEntrada: dataBR,
+          grupoPalete: i, // cada vaga aqui é um palete físico diferente — código próprio pra cada uma
         })),
       }),
     });
@@ -2560,6 +2957,7 @@ async function confirmarEntrada(){
     ENTRADA_PRODUTO = null;
     ENTRADA_QTD = 1;
     ENTRADA_VAGAS = [];
+    document.getElementById('entradaPacotes').value = '';
     document.getElementById('entradaCampos').style.display = 'none';
     document.getElementById('entradaSelecionado').textContent = 'Escolha um produto na lista ao lado.';
     await carregarDados(); // resincroniza o mapa com a planilha já atualizada
@@ -2573,6 +2971,9 @@ async function confirmarEntrada(){
 }
 
 function inicializarAbaEntrada(){
+  document.getElementById('btnModoSimples').addEventListener('click', () => alternarModoEntrada('simples'));
+  document.getElementById('btnModoMisto').addEventListener('click', () => alternarModoEntrada('misto'));
+
   const busca = document.getElementById('buscaEntradaProduto');
   busca.addEventListener('input', () => {
     FILTRO_ENTRADA = busca.value.trim().toLowerCase();
@@ -2598,6 +2999,28 @@ function inicializarAbaEntrada(){
   document.getElementById('btnConfirmarEntrada').addEventListener('click', confirmarEntrada);
 
   renderListaProdutosEntrada();
+
+  // ===== modo Palete misto =====
+  const buscaMisto = document.getElementById('buscaEntradaMistoProduto');
+  buscaMisto.addEventListener('input', () => {
+    FILTRO_ENTRADA_MISTO = buscaMisto.value.trim().toLowerCase();
+    renderListaProdutosEntradaMisto();
+  });
+
+  document.getElementById('btnCalcularVagaMisto').addEventListener('click', () => {
+    if(ITENS_PALETE_MISTO.length === 0){ alert('Adicione ao menos um produto ao palete misto antes de calcular a posição.'); return; }
+    const semFamilia = ITENS_PALETE_MISTO.find(i => !i.familia);
+    if(semFamilia){ alert(`Escolha a família de "${semFamilia.produto}" antes de calcular a posição.`); return; }
+    const familiaBase = ITENS_PALETE_MISTO[0].familia;
+    const vagas = sugerirVagasParaEntrada(familiaBase, 1);
+    VAGA_MISTO = vagas[0] || null;
+    renderVagaMistoPreview();
+  });
+
+  document.getElementById('btnConfirmarEntradaMisto').addEventListener('click', confirmarEntradaMisto);
+
+  renderListaProdutosEntradaMisto();
+  renderItensPaleteMisto();
 }
 
 function inicializarAbaCarga(){
@@ -2605,6 +3028,15 @@ function inicializarAbaCarga(){
   buscaCarga.addEventListener('input', ()=>{
     FILTRO_CARGA = buscaCarga.value.trim().toLowerCase();
     renderListaProdutosCarga();
+  });
+
+  const buscaCodigo = document.getElementById('buscaCodigoPalete');
+  const executar = () => {
+    if(buscaCodigo.value.trim()) executarBuscaCodigoPalete(buscaCodigo.value);
+  };
+  document.getElementById('btnBuscarCodigoPalete').addEventListener('click', executar);
+  buscaCodigo.addEventListener('keydown', e=>{
+    if(e.key === 'Enter') executar();
   });
 
   const drop = document.getElementById('caminhaoDrop');
