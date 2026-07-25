@@ -83,6 +83,10 @@
     border-color:var(--frost); color:var(--frost);
     box-shadow:0 0 16px rgba(217,164,65,0.35), inset 0 0 10px rgba(217,164,65,0.15);
   }
+  .floor-btn-divisor{ width:32px; height:1px; background:var(--ice-line); margin:2px 0; }
+  .floor-btn-camara{
+    width:52px; height:36px; font-size:11px; letter-spacing:0.5px; padding:0 4px;
+  }
 
   .content{ flex:1; min-width:0; }
 
@@ -106,6 +110,12 @@
     text-align:center; padding:10px 0; font-weight:800; font-family:var(--font-mono);
     opacity:0.9;
   }
+  .andar-secao-titulo{
+    font-size:18px; color:var(--brand); text-transform:uppercase; letter-spacing:3px;
+    text-align:center; padding:22px 0 12px; font-weight:800; font-family:var(--font-mono);
+    border-top:2px solid var(--frost-dim); margin-top:18px;
+  }
+  .andar-secao-titulo:first-child{ border-top:none; margin-top:0; }
 
   .legend{ display:flex; gap:20px; font-size:11.5px; color:var(--text-soft); margin-bottom:16px; flex-wrap:wrap; }
   .legend span{ display:inline-flex; align-items:center; gap:7px; }
@@ -402,6 +412,7 @@
   @media (max-width:900px){
     .layout{ flex-direction:column; }
     .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
+    .floor-btn-divisor{ width:1px; height:32px; margin:0 2px; }
     .kpi-row{ grid-template-columns:repeat(2,1fr); }
   }
 </style>
@@ -686,7 +697,28 @@ function andarTemExtra(andar){
   return andar === 3 || andar === 4;
 }
 
-let andarAtual = 4; // andar mais alto como padrão
+let andarAtual = 4; // andar mais alto como padrão; null = "CÂMARA" (todos os andares somados)
+
+/* Lista de andares a considerar nos cálculos do painel: só o selecionado,
+   ou todos quando o botão "CÂMARA" está ativo (andarAtual === null). */
+function andaresConsiderados(){
+  return andarAtual === null ? ANDARES : [andarAtual];
+}
+
+/* Registros de ocupação filtrados pelo andar selecionado no painel tipo
+   elevador — usado por todos os cálculos de dashboard (ocupação, família,
+   aging, estoque) pra que "mudar de andar" realmente mude os números
+   mostrados, não só o desenho do mapa lá embaixo. */
+function registrosDoAndarSelecionado(){
+  if(andarAtual === null) return OCUPACAO_REGISTROS;
+  return OCUPACAO_REGISTROS.filter(r => r.andar === andarAtual);
+}
+
+/* Texto curto pra deixar claro, nos títulos dos painéis, se os números
+   mostrados são de um andar específico ou da câmara toda. */
+function rotuloAndarSelecionado(){
+  return andarAtual === null ? 'Câmara toda' : `Andar ${andarAtual}`;
+}
 
 /* ======================================================================
    INTEGRAÇÃO COM GOOGLE SHEETS
@@ -1084,9 +1116,9 @@ function doorWallHtml(portaLabel, side){
   `;
 }
 
-function renderRua(rua){
+function renderRua(rua, andar){
   const isDouble = rua.lados.length === 2;
-  const extraAtivo = andarTemExtra(andarAtual);
+  const extraAtivo = andarTemExtra(andar);
   const posPorLadoNesteAndar = extraAtivo ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
   const capacidade = rua.lados.length * posPorLadoNesteAndar;
   const portaLabel = PORTA_POR_RUA[rua.numero];
@@ -1098,10 +1130,10 @@ function renderRua(rua){
     body = `
       ${portaSide === 'top' ? portaHtml : ''}
       <div class="lado-label">Lado A</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'A', andarAtual)}</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'A', andar)}</div>
       <div class="rua-mid-label">Rua ${rua.numero}</div>
       <div class="lado-label">Lado B</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'B', andarAtual)}</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'B', andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
   } else {
@@ -1109,12 +1141,12 @@ function renderRua(rua){
       ${portaSide === 'top' ? portaHtml : ''}
       <div class="rua-mid-label">Rua ${rua.numero}</div>
       <div class="lado-label">Lado único</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'U', andarAtual)}</div>
+      <div class="rack-scroll">${renderRackSvg(rua.numero, 'U', andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
   }
 
-  const paletesNesteAndar = rua.lados.length * paletesTotaisNoAndar(andarAtual);
+  const paletesNesteAndar = rua.lados.length * paletesTotaisNoAndar(andar);
   return `
     <div class="rua-panel">
       <div class="rua-head">
@@ -1438,17 +1470,18 @@ function renderFamilyLegend(){
 function calcularOcupacaoCamara(){
   let ocupados = 0, capacidade = 0;
   RUAS.forEach(rua => rua.lados.forEach(lado => {
-    ANDARES.forEach(andar => {
+    andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua.numero, lado, andar);
       capacidade += paletesTotaisNoAndar(andar);
     });
   }));
-  return [{ label: 'Câmara fria — total geral', ocupados, capacidade }];
+  const label = andarAtual === null ? 'Câmara fria — total geral' : `Câmara fria — Andar ${andarAtual}`;
+  return [{ label, ocupados, capacidade }];
 }
 function calcularOcupacaoPorRua(){
   return RUAS.flatMap(rua => rua.lados.map(lado => {
     let ocupados = 0, capacidade = 0;
-    ANDARES.forEach(andar => {
+    andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua.numero, lado, andar);
       capacidade += paletesTotaisNoAndar(andar);
     });
@@ -1457,7 +1490,7 @@ function calcularOcupacaoPorRua(){
   }));
 }
 function calcularOcupacaoPorAndar(){
-  return ANDARES.map(andar => {
+  return andaresConsiderados().map(andar => {
     let ocupados = 0;
     RUAS.forEach(rua => rua.lados.forEach(lado => { ocupados += paletesOcupados(rua.numero, lado, andar); }));
     const capacidade = RUAS.reduce((sum, rua) => sum + rua.lados.length * paletesTotaisNoAndar(andar), 0);
@@ -1500,7 +1533,7 @@ let GRAFICO_FAMILIA_ATUAL = null; // null = visão por família; nome da famíli
 function calcularOcupacaoPorFamilia(){
   const porFamilia = {};
   let total = 0;
-  OCUPACAO_REGISTROS.forEach(r => {
+  registrosDoAndarSelecionado().forEach(r => {
     if(!r.ocupado || !r.familia) return;
     porFamilia[r.familia] = (porFamilia[r.familia] || 0) + 1;
     total++;
@@ -1511,7 +1544,7 @@ function calcularOcupacaoPorFamilia(){
 function calcularProdutosDaFamilia(familia){
   const porProduto = {};
   let total = 0;
-  OCUPACAO_REGISTROS.forEach(r => {
+  registrosDoAndarSelecionado().forEach(r => {
     if(!r.ocupado || r.familia !== familia) return;
     total++; // conta o palete uma vez, mesmo que ele carregue mais de um produto
     r.produtos.forEach(p => { porProduto[p] = (porProduto[p] || 0) + 1; });
@@ -1532,14 +1565,14 @@ function renderGraficoFamilias(){
     labels = Object.keys(porFamilia).sort((a, b) => porFamilia[b] - porFamilia[a]);
     valores = labels.map(f => porFamilia[f]);
     totalBase = total;
-    titulo = 'Ocupação por família';
+    titulo = `Ocupação por família — ${rotuloAndarSelecionado()}`;
     subtitulo = 'Fatia = % dos paletes ocupados hoje. Clique numa família pra ver os produtos dela.';
   } else {
     const { porProduto, total } = calcularProdutosDaFamilia(GRAFICO_FAMILIA_ATUAL);
     labels = Object.keys(porProduto).sort((a, b) => porProduto[b] - porProduto[a]);
     valores = labels.map(p => porProduto[p]);
     totalBase = total;
-    titulo = `Produtos da família "${GRAFICO_FAMILIA_ATUAL}"`;
+    titulo = `Produtos da família "${GRAFICO_FAMILIA_ATUAL}" — ${rotuloAndarSelecionado()}`;
     subtitulo = 'Paletes mistos contam pra mais de um produto — a soma das fatias pode passar de 100%.';
   }
 
@@ -1617,7 +1650,7 @@ function renderGraficoFamilias(){
    o que priorizar na venda antes que fique parado tempo demais. */
 function calcularProdutosMaisAntigos(limite){
   const porProduto = {}; // produto -> { dias (do palete mais antigo), paletes (quantos tem no total) }
-  OCUPACAO_REGISTROS.forEach(r => {
+  registrosDoAndarSelecionado().forEach(r => {
     if(!r.ocupado) return;
     const dias = diasEmEstoque(r.dataEntrada);
     r.produtos.forEach(p => {
@@ -1643,7 +1676,7 @@ function renderGraficoAging(){
 
   el.innerHTML = `
     <div class="grafico-panel">
-      <div class="ocupacao-title">Produtos parados há mais tempo</div>
+      <div class="ocupacao-title">Produtos parados há mais tempo — ${rotuloAndarSelecionado()}</div>
       <div class="grafico-sub">Palete mais antigo de cada produto — indicador pro time comercial priorizar venda/giro.</div>
       <div class="grafico-wrap grafico-wrap-bar"><canvas id="canvasAging"></canvas></div>
     </div>
@@ -1863,7 +1896,7 @@ function renderOcupacaoPainel(){
    paletes ocupados, e é isso que se espera quando um palete é misto. */
 function calcularEstoquePorProduto(){
   const porProduto = {}; // produto -> { paletes, familia }
-  OCUPACAO_REGISTROS.forEach(r=>{
+  registrosDoAndarSelecionado().forEach(r=>{
     if(!r.ocupado || r.produtos.length === 0) return;
     r.produtos.forEach(p=>{
       if(!produtoCombina([p])) return; // respeita a busca ativa
@@ -1898,19 +1931,21 @@ function renderEstoquePorProduto(){
 
   el.innerHTML = `
     <div class="saida-panel">
-      <span class="saida-title">Estoque por produto (em paletes)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
+      <span class="saida-title">Estoque por produto (em paletes) — ${rotuloAndarSelecionado()}${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
       <div class="estoque-list">${linhas}</div>
     </div>
   `;
 }
 
 function renderKPIs(){
-  const capNesteAndar = posicoesPorAndar(andarAtual);
+  const capNesteAndar = andarAtual === null
+    ? ANDARES.reduce((sum,a)=> sum + posicoesPorAndar(a), 0)
+    : posicoesPorAndar(andarAtual);
   const capTotalPosicoes = ANDARES.reduce((sum,a)=> sum + posicoesPorAndar(a), 0);
   const capTotalPaletes = ANDARES.reduce((sum,a)=> sum + RUAS.reduce((s,r)=> s + r.lados.length * paletesTotaisNoAndar(a), 0), 0);
   document.getElementById('kpiRow').innerHTML = `
     <div class="kpi-card"><div class="lbl">Ruas</div><div class="val">${RUAS.length}</div></div>
-    <div class="kpi-card"><div class="lbl">Posições no andar ${andarAtual}</div><div class="val">${capNesteAndar}</div></div>
+    <div class="kpi-card"><div class="lbl">Posições — ${rotuloAndarSelecionado()}</div><div class="val">${capNesteAndar}</div></div>
     <div class="kpi-card"><div class="lbl">Posições — câmara toda</div><div class="val">${capTotalPosicoes.toLocaleString('pt-BR')}</div></div>
     <div class="kpi-card"><div class="lbl">Capacidade em paletes</div><div class="val">${capTotalPaletes.toLocaleString('pt-BR')}</div></div>
   `;
@@ -3095,6 +3130,24 @@ function renderFloorPanel(){
     });
     panel.appendChild(btn);
   });
+
+  // botão extra — mostra a câmara toda (todos os andares somados),
+  // separado visualmente dos números de andar por uma linha divisória
+  const divisor = document.createElement('div');
+  divisor.className = 'floor-btn-divisor';
+  panel.appendChild(divisor);
+
+  const btnCamara = document.createElement('button');
+  btnCamara.className = 'floor-btn floor-btn-camara' + (andarAtual === null ? ' active' : '');
+  btnCamara.textContent = 'CÂMARA';
+  btnCamara.title = 'Câmara toda (todos os andares)';
+  btnCamara.addEventListener('click', ()=>{
+    if(andarAtual === null) return;
+    andarAtual = null;
+    renderFloorPanel();
+    renderAll();
+  });
+  panel.appendChild(btnCamara);
 }
 
 function renderAll(){
@@ -3110,7 +3163,16 @@ function renderAll(){
   renderAlocacaoSugerida();
   renderEstoquePorProduto();
   renderFamilyLegend();
-  document.getElementById('ruasWrap').innerHTML = RUAS.map(renderRua).join('');
+  if(andarAtual === null){
+    // "CÂMARA" selecionada: desenha os 4 andares, um embaixo do outro,
+    // do mais alto pro mais baixo — como se fosse subir o prédio olhando
+    document.getElementById('ruasWrap').innerHTML = ANDARES.slice().reverse().map(andar => `
+      <div class="andar-secao-titulo">Andar ${andar}</div>
+      ${RUAS.map(rua => renderRua(rua, andar)).join('')}
+    `).join('');
+  } else {
+    document.getElementById('ruasWrap').innerHTML = RUAS.map(rua => renderRua(rua, andarAtual)).join('');
+  }
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
   renderListaProdutosEntrada(); // idem pra Nova Entrada
