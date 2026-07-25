@@ -873,7 +873,11 @@ function comNumeroDaLinha(data, numeroLinha){
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
 let OCUPACAO_CONFLITOS_SET = new Set(); // mesma info, em Set, pra lookup rápido no desenho
 
+let CARREGANDO_DADOS = false; // trava pra não empilhar chamadas quando o intervalo é curto (2s) e a rede demora a responder
+
 async function carregarDados(){
+  if(CARREGANDO_DADOS) return; // já tem uma busca em andamento, pula esse ciclo
+  CARREGANDO_DADOS = true;
   const statusEl = document.getElementById('syncStatus');
   if(statusEl) statusEl.textContent = 'Atualizando…';
   try{
@@ -943,6 +947,8 @@ async function carregarDados(){
   } catch(err){
     console.error('Erro ao carregar planilhas:', err);
     if(statusEl) statusEl.textContent = 'Erro ao buscar dados — tentando de novo em breve';
+  } finally {
+    CARREGANDO_DADOS = false;
   }
   renderAll();
 }
@@ -3188,7 +3194,7 @@ renderFloorPanel();
 renderAll();
 carregarDados();
 // Atualiza sozinho a cada 2 minutos, pra equipe não precisar clicar toda hora
-setInterval(carregarDados, 120000);
+setInterval(carregarDados, 120000); // 2 minutos
 </script>
 </body>
 </html>
