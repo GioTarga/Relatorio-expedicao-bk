@@ -116,6 +116,19 @@
     border-top:2px solid var(--frost-dim); margin-top:18px;
   }
   .andar-secao-titulo:first-child{ border-top:none; margin-top:0; }
+  .nav-andar-mapa{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin-bottom:14px; padding:10px 14px; background:var(--panel);
+    border:1px solid var(--ice-line); border-radius:12px;
+  }
+  .nav-andar-atual{ font-family:var(--font-mono); font-weight:800; letter-spacing:1px; color:var(--frost); font-size:13px; }
+  .btn-nav-andar{
+    background:var(--bg-soft); border:1px solid var(--ice-line); color:var(--text);
+    font-family:inherit; font-size:12.5px; font-weight:600; padding:8px 14px;
+    border-radius:8px; cursor:pointer; transition:all 0.15s;
+  }
+  .btn-nav-andar:hover:not(:disabled){ border-color:var(--frost-dim); color:var(--frost); }
+  .btn-nav-andar:disabled{ opacity:0.35; cursor:not-allowed; }
 
   .legend{ display:flex; gap:20px; font-size:11.5px; color:var(--text-soft); margin-bottom:16px; flex-wrap:wrap; }
   .legend span{ display:inline-flex; align-items:center; gap:7px; }
@@ -698,6 +711,7 @@ function andarTemExtra(andar){
 }
 
 let andarAtual = 4; // andar mais alto como padrão; null = "CÂMARA" (todos os andares somados)
+let andarMapaCamara = 4; // qual andar o mapa mostra quando a visão é "CÂMARA" (navegação por botões laterais)
 
 /* Lista de andares a considerar nos cálculos do painel: só o selecionado,
    ou todos quando o botão "CÂMARA" está ativo (andarAtual === null). */
@@ -3164,12 +3178,31 @@ function renderAll(){
   renderEstoquePorProduto();
   renderFamilyLegend();
   if(andarAtual === null){
-    // "CÂMARA" selecionada: desenha os 4 andares, um embaixo do outro,
-    // do mais alto pro mais baixo — como se fosse subir o prédio olhando
-    document.getElementById('ruasWrap').innerHTML = ANDARES.slice().reverse().map(andar => `
-      <div class="andar-secao-titulo">Andar ${andar}</div>
-      ${RUAS.map(rua => renderRua(rua, andar)).join('')}
-    `).join('');
+    // "CÂMARA" selecionada: os números do topo continuam somando os 4
+    // andares, mas o mapa mostra só 1 andar por vez (com botões de
+    // navegação), em vez de empilhar os 4 — fica bem mais compacto.
+    if(!ANDARES.includes(andarMapaCamara)) andarMapaCamara = ANDARES[ANDARES.length - 1];
+    const idx = ANDARES.indexOf(andarMapaCamara);
+    const temAnterior = idx > 0;
+    const temProximo = idx < ANDARES.length - 1;
+    document.getElementById('ruasWrap').innerHTML = `
+      <div class="nav-andar-mapa">
+        <button id="btnAndarMapaAnterior" class="btn-nav-andar" ${temAnterior ? '' : 'disabled'}>◀ Andar anterior</button>
+        <span class="nav-andar-atual">Mapa — Andar ${andarMapaCamara}</span>
+        <button id="btnAndarMapaProximo" class="btn-nav-andar" ${temProximo ? '' : 'disabled'}>Próximo andar ▶</button>
+      </div>
+      ${RUAS.map(rua => renderRua(rua, andarMapaCamara)).join('')}
+    `;
+    const btnAnterior = document.getElementById('btnAndarMapaAnterior');
+    const btnProximo = document.getElementById('btnAndarMapaProximo');
+    if(btnAnterior) btnAnterior.addEventListener('click', ()=>{
+      const i = ANDARES.indexOf(andarMapaCamara);
+      if(i > 0){ andarMapaCamara = ANDARES[i - 1]; renderAll(); }
+    });
+    if(btnProximo) btnProximo.addEventListener('click', ()=>{
+      const i = ANDARES.indexOf(andarMapaCamara);
+      if(i < ANDARES.length - 1){ andarMapaCamara = ANDARES[i + 1]; renderAll(); }
+    });
   } else {
     document.getElementById('ruasWrap').innerHTML = RUAS.map(rua => renderRua(rua, andarAtual)).join('');
   }
