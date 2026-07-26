@@ -2061,14 +2061,15 @@ function unidadesSelecionadasNaCarga(){
   const unidades = [];
   CARGA_ITENS.forEach(item=>{
     selecionarPaletesParaProduto(item.produto, item.quantidade).forEach(r=>{
-      unidades.push({ ...r, produtoAlvo: item.produto });
+      // vindo da busca por produto (FIFO) — sempre palete inteiro, sem opção de parcial
+      unidades.push({ ...r, produtoAlvo: item.produto, pacotesRetirar: null });
     });
   });
   CARGA_ITENS_LINHA.forEach(entrada=>{
     // busca a versão mais atual do registro (caso os dados tenham sido
     // resincronizados desde que o código foi bipado), pelo número da linha
     const atual = OCUPACAO_REGISTROS.find(r => r.linha === entrada.linha && r.ocupado);
-    if(atual) unidades.push({ ...atual, produtoAlvo: entrada.produto });
+    if(atual) unidades.push({ ...atual, produtoAlvo: entrada.produto, pacotesRetirar: entrada.pacotesRetirar });
   });
   return unidades;
 }
@@ -2108,13 +2109,21 @@ function executarBuscaCodigoPalete(codigo){
   renderResultadoBuscaCodigo();
 }
 
-function adicionarLinhaDaCargaPorCodigo(linha, produto){
+function adicionarLinhaDaCargaPorCodigo(linha, produto, pacotesRetirar){
   const registro = OCUPACAO_REGISTROS.find(r => r.linha === linha && r.ocupado);
   if(!registro) return;
   const jaAdicionado = CARGA_ITENS_LINHA.some(e => e.linha === linha && e.produto === produto);
   if(jaAdicionado) return;
+  // se o produto tem PACOTES registrado, valida e permite retirada parcial;
+  // sem PACOTES conhecido (dado legado), só dá pra retirar o palete inteiro
+  let pacotesFinal = null;
+  if(registro.pacotes){
+    pacotesFinal = pacotesRetirar ? Math.max(1, Math.min(registro.pacotes, Math.round(pacotesRetirar))) : registro.pacotes;
+  }
   CARGA_ITENS_LINHA.push({
-    linha, produto, pacotes: registro.pacotes,
+    linha, produto,
+    pacotesTotalNoMomento: registro.pacotes, // pra comparar depois se foi parcial ou não
+    pacotesRetirar: pacotesFinal,             // null = sem info de pacotes (retira o palete inteiro, sem opção de parcial)
     rua: registro.rua, lado: registro.lado, andar: registro.andar, posicao: registro.posicao, palete: registro.palete,
     produtosOriginais: registro.produtos, codigoPalete: registro.codigoPalete,
   });
@@ -2207,9 +2216,13 @@ function renderCargaLista(){
     const familia = familiaDoProduto(entrada.produto);
     const cor = familia ? familyColor(familia) : 'var(--text-soft)';
     const ladoTxt = entrada.lado === 'U' ? '' : ` Lado ${entrada.lado}`;
+    const ehParcial = entrada.pacotesTotalNoMomento && entrada.pacotesRetirar && entrada.pacotesRetirar < entrada.pacotesTotalNoMomento;
+    const qtdTxt = ehParcial
+      ? ` · <strong style="color:var(--extra);">${entrada.pacotesRetirar} de ${entrada.pacotesTotalNoMomento} pacotes (parcial)</strong>`
+      : (entrada.pacotesTotalNoMomento ? ` · ${entrada.pacotesTotalNoMomento} pacotes (palete inteiro)` : ' · palete inteiro');
     return `<div class="carga-row">
       <span class="estoque-swatch" style="background:${cor}"></span>
-      <span class="cr-nome">${escapeHtml(entrada.produto)}<br><small style="opacity:.65;">Rua ${entrada.rua}${ladoTxt} · And.${entrada.andar} · Pos.${String(entrada.posicao).padStart(2,'0')}-P${entrada.palete} · código ${escapeHtml(entrada.codigoPalete || '—')}</small></span>
+      <span class="cr-nome">${escapeHtml(entrada.produto)}${qtdTxt}<br><small style="opacity:.65;">Rua ${entrada.rua}${ladoTxt} · And.${entrada.andar} · Pos.${String(entrada.posicao).padStart(2,'0')}-P${entrada.palete} · código ${escapeHtml(entrada.codigoPalete || '—')}</small></span>
       <button class="cr-remover" data-acao="remover-linha" data-linha="${entrada.linha}" data-produto="${escapeHtml(entrada.produto)}" title="Remover">✕</button>
     </div>`;
   }).join('');
@@ -2245,8 +2258,13 @@ function renderCargaLista(){
 }
 
 /* Desenha o resultado da busca por código de palete: lista os produtos
-   daquele palete com um botão "adicionar" cada, ou avisa se não achou
-   nada (código digitado errado, ou palete que já saiu). */
+   daquele palete, cada um com um campo pra escolher quantos pacotes
+   retirar (retirada parcial fica só reduzindo o número — o palete
+   continua na mesma posição até os pacotes chegarem a zero) e um botão
+   "adicionar"; ou avisa se não achou nada (código digitado errado, ou
+   palete que já saiu). Produtos sem PACOTES registrado (dado antigo) só
+   podem ser retirados por inteiro, já que não tem quantidade pra
+   comparar. */
 function renderResultadoBuscaCodigo(){
   const el = document.getElementById('resultadoBuscaCodigo');
   if(!el) return;
@@ -2260,19 +2278,30 @@ function renderResultadoBuscaCodigo(){
   const linhas = BUSCA_CODIGO_RESULTADO.registros.map(r=>{
     const ladoTxt = r.lado === 'U' ? '' : ` Lado ${r.lado}`;
     const jaAdicionado = CARGA_ITENS_LINHA.some(e => e.linha === r.linha && e.produto === r.produto);
-    return `<div class="entrada-vaga-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <span>${escapeHtml(r.produto)}${r.pacotes ? ` · ${r.pacotes} pacote${r.pacotes===1?'':'s'}` : ''}<br><small style="opacity:.65;">Rua ${r.rua}${ladoTxt} · And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</small></span>
-      <button class="btn-sync${jaAdicionado ? ' btn-secundario' : ''}" style="padding:6px 12px;" data-linha="${r.linha}" data-produto="${escapeHtml(r.produto)}" ${jaAdicionado ? 'disabled' : ''}>${jaAdicionado ? '✓ na carga' : '+ Adicionar'}</button>
+    const temPacotes = !!r.pacotes;
+    const campoQtd = temPacotes
+      ? `<input type="number" min="1" max="${r.pacotes}" value="${r.pacotes}" class="entrada-data-input" style="width:70px;" data-qtd-linha="${r.linha}" data-qtd-produto="${escapeHtml(r.produto)}" ${jaAdicionado ? 'disabled' : ''}>`
+      : '';
+    return `<div class="entrada-vaga-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span>${escapeHtml(r.produto)}${temPacotes ? ` · ${r.pacotes} pacote${r.pacotes===1?'':'s'} no palete` : ' · sem pacotes registrados (só dá pra retirar o palete inteiro)'}<br><small style="opacity:.65;">Rua ${r.rua}${ladoTxt} · And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</small></span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        ${campoQtd}
+        <button class="btn-sync${jaAdicionado ? ' btn-secundario' : ''}" style="padding:6px 12px;" data-linha="${r.linha}" data-produto="${escapeHtml(r.produto)}" ${jaAdicionado ? 'disabled' : ''}>${jaAdicionado ? '✓ na carga' : '+ Adicionar'}</button>
+      </div>
     </div>`;
   }).join('');
 
   el.innerHTML = `
-    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(BUSCA_CODIGO_RESULTADO.codigo)}</strong> — ${BUSCA_CODIGO_RESULTADO.registros.length} produto${BUSCA_CODIGO_RESULTADO.registros.length===1?'':'s'}:</div>
+    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(BUSCA_CODIGO_RESULTADO.codigo)}</strong> — ${BUSCA_CODIGO_RESULTADO.registros.length} produto${BUSCA_CODIGO_RESULTADO.registros.length===1?'':'s'}. Pra retirar só parte, diminua a quantidade de pacotes antes de adicionar.</div>
     <div class="entrada-vagas-lista">${linhas}</div>
   `;
   el.querySelectorAll('button[data-linha]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      adicionarLinhaDaCargaPorCodigo(Number(btn.getAttribute('data-linha')), btn.getAttribute('data-produto'));
+      const linha = Number(btn.getAttribute('data-linha'));
+      const produto = btn.getAttribute('data-produto');
+      const qtdInput = el.querySelector(`input[data-qtd-linha="${linha}"][data-qtd-produto="${CSS.escape(produto)}"]`);
+      const pacotesRetirar = qtdInput ? Number(qtdInput.value) : null;
+      adicionarLinhaDaCargaPorCodigo(linha, produto, pacotesRetirar);
       renderResultadoBuscaCodigo();
     });
   });
@@ -2436,19 +2465,29 @@ function montarPaletesDaCarga(){
     // própria confirmação pro Apps Script.
     const key = p.linha;
     if(!mapa[key]){
-      mapa[key] = { linha: p.linha, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set() };
+      mapa[key] = { linha: p.linha, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set(), pacotesTotalAtual: p.pacotes, pacotesRetirar: null };
     }
     mapa[key].produtosRetirar.add(p.produtoAlvo);
+    // guarda a quantidade de pacotes pedida, se essa unidade veio com uma
+    // (busca por código); se vier sem (busca por produto/FIFO), o palete
+    // é retirado inteiro, então não sobrescreve um valor parcial já visto
+    if(p.pacotesRetirar) mapa[key].pacotesRetirar = p.pacotesRetirar;
   });
   return Object.values(mapa).map(e=>{
     const produtosQueFicam = e.produtosOriginais.filter(p => !e.produtosRetirar.has(p));
+    const ambiguo = produtosQueFicam.length > 0;
+    // retirada parcial por pacotes só se aplica quando NÃO é o caso antigo
+    // de palete misto ambíguo (comma-list) e quando a quantidade pedida é
+    // menor que o total do palete — do contrário é uma retirada completa
+    const ehParcialPacotes = !ambiguo && e.pacotesRetirar && e.pacotesTotalAtual && e.pacotesRetirar < e.pacotesTotalAtual;
     return {
       linha: e.linha,
       rua: e.rua, lado: e.lado, andar: e.andar, posicao: e.posicao, palete: e.palete,
       produtosOriginais: e.produtosOriginais,
       produtosRetirar: [...e.produtosRetirar],
-      ambiguo: produtosQueFicam.length > 0,
-      tipo: produtosQueFicam.length > 0 ? 'parcial' : 'completo', // sugestão inicial
+      ambiguo,
+      tipo: ambiguo ? 'parcial' : (ehParcialPacotes ? 'pacotes_parcial' : 'completo'), // sugestão inicial
+      pacotesRetirar: ehParcialPacotes ? e.pacotesRetirar : null,
     };
   });
 }
@@ -2537,7 +2576,7 @@ async function enviarConfirmacaoCarga(paletes){
         paletes: paletes.map(p => ({
           linha: p.linha,
           rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete,
-          tipo: p.tipo, produtosRetirar: p.produtosRetirar,
+          tipo: p.tipo, produtosRetirar: p.produtosRetirar, pacotesRetirar: p.pacotesRetirar,
           produto: p.produtosRetirar.join(', '),
         })),
       }),
