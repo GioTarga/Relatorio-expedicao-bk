@@ -503,8 +503,6 @@
 
       <div id="proximosASair"></div>
 
-      <div id="fifoWarnings"></div>
-
       <div id="estoquePorProduto"></div>
 
       <div class="kpi-row" id="kpiRow"></div>
@@ -528,21 +526,13 @@
   <div class="carga-layout">
 
     <div class="carga-col-produtos">
-      <div class="carga-panel-title">Produtos em estoque</div>
-      <div class="busca-row">
-        <span class="busca-ico">🔍</span>
-        <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar por nome ou código…" autocomplete="off">
-      </div>
-      <div class="carga-dica">Toque num produto (ou arraste, no computador) pra adicionar 1 palete à carga.</div>
-      <div id="listaProdutosCarga" class="carga-produtos-lista"></div>
-
-      <div class="carga-panel-title" style="margin-top:22px;">Ou buscar palete pelo código</div>
+      <div class="carga-panel-title">Buscar palete pelo código</div>
       <div class="busca-row">
         <span class="busca-ico">📦</span>
         <input type="text" id="buscaCodigoPalete" class="busca-input" placeholder="Código do palete (ex.: 20260725-1432)…" autocomplete="off">
         <button id="btnBuscarCodigoPalete" class="btn-sync" style="padding:8px 14px;">Buscar</button>
       </div>
-      <div class="carga-dica">Útil pra paletes mistos — acha de uma vez todos os produtos daquele palete, sem precisar buscar um por um. No futuro dá pra bipar em vez de digitar.</div>
+      <div class="carga-dica">Digite o código do palete pra ver todos os produtos dele de uma vez — inclusive paletes mistos. No futuro dá pra bipar em vez de digitar.</div>
       <div id="resultadoBuscaCodigo"></div>
     </div>
 
@@ -652,9 +642,6 @@
       <div id="listaItensPaleteMisto"></div>
 
       <div id="entradaMistoCampos" style="display:none;">
-        <label class="entrada-label">Data de produção</label>
-        <input type="date" id="entradaMistoDataProducao" class="entrada-data-input">
-
         <label class="entrada-label">Data de entrada</label>
         <input type="date" id="entradaMistoData" class="entrada-data-input">
 
@@ -662,7 +649,9 @@
 
         <div id="entradaVagaMistoPreview"></div>
 
-        <button id="btnConfirmarEntradaMisto" class="btn-sync btn-confirmar" style="display:none;margin-top:12px;">✅ Confirmar entrada do palete misto</button>
+        <div id="entradaMistoCodigoPreview"></div>
+
+        <button id="btnConfirmarEntradaMisto" class="btn-sync btn-confirmar" style="display:none;margin-top:12px;">✅ CONFIRMAR PALETE</button>
       </div>
 
       <div class="carga-aviso" style="margin-top:16px;">⚠ Palete misto ocupa 1 vaga só — todos os produtos adicionados aqui vão pro mesmo endereço, com o mesmo código de rastreio.</div>
@@ -1388,95 +1377,6 @@ function statusRuaLado(rua, lado){
     vaga: andarAlvo !== null ? encontrarPrimeiraVagaLivre(rua, lado, andarAlvo) : null,
     livresAndar: andarAlvo !== null ? (paletesTotaisNoAndar(andarAlvo) - paletesOcupados(rua, lado, andarAlvo)) : 0,
   };
-}
-
-/* Pra cada família que já tem palete guardado, sugere onde entra o
-   PRÓXIMO palete dela. Uma família pode legitimamente ocupar mais de uma
-   rua/lado ao mesmo tempo (ex: cresceu além do que cabia numa rua só) —
-   nesse caso, em vez de tentar adivinhar "a rua da família" (o que não
-   existe), a gente:
-     1) olha todas as ruas/lados onde essa família já tem palete hoje;
-     2) entre as que ainda têm vaga, escolhe a que tem MENOS espaço livre
-        no total — ou seja, prioriza fechar/lotar uma rua já em uso antes
-        de espalhar a família em mais lugares;
-     3) só sugere abrir uma rua nova (sem nenhuma família ainda) se todas
-        as ruas onde a família já está tiverem lotado. */
-function calcularAlocacaoPorFamilia(){
-  const status = {};
-  RUAS.forEach(rua => rua.lados.forEach(lado => {
-    status[`${rua.numero}-${lado}`] = statusRuaLado(rua.numero, lado);
-  }));
-
-  const ruasPorFamilia = {};
-  OCUPACAO_REGISTROS.forEach(r => {
-    if(!r.ocupado || !r.familia) return;
-    const key = `${r.rua}-${r.lado}`;
-    (ruasPorFamilia[r.familia] = ruasPorFamilia[r.familia] || new Set()).add(key);
-  });
-
-  return Object.keys(ruasPorFamilia).sort().map(familia => {
-    const ativasComVaga = [...ruasPorFamilia[familia]]
-      .map(k => status[k])
-      .filter(s => s.andarAlvo !== null)
-      .sort((a, b) => a.livresTotal - b.livresTotal); // menos espaço livre primeiro = consolidar
-
-    if(ativasComVaga.length){
-      const alvo = ativasComVaga[0];
-      return { familia, rua: alvo.rua, lado: alvo.lado, andar: alvo.andarAlvo, vaga: alvo.vaga, livres: alvo.livresAndar, cheio: false, novaRua: false };
-    }
-
-    // todas as ruas onde a família já está estão cheias — procura outra
-    // rua com vaga. Prioriza uma totalmente livre (nenhuma família ainda);
-    // se não existir nenhuma assim (câmara cheia de famílias em toda parte),
-    // usa a que tiver mais espaço livre mesmo que já tenha outra família —
-    // sem isso, uma família nova nunca conseguiria entrar numa câmara onde
-    // toda rua já tem algum produto, mesmo sobrando espaço físico de verdade.
-    const comVaga = Object.values(status).filter(s => s.andarAlvo !== null);
-    const ruaVirgem = comVaga.find(s => !s.temAlgumaFamilia);
-    const ruaEscolhida = ruaVirgem || comVaga.sort((a, b) => b.livresTotal - a.livresTotal)[0];
-    if(ruaEscolhida){
-      return { familia, rua: ruaEscolhida.rua, lado: ruaEscolhida.lado, andar: ruaEscolhida.andarAlvo, vaga: ruaEscolhida.vaga, livres: ruaEscolhida.livresAndar, cheio: false, novaRua: true };
-    }
-
-    return { familia, cheio: true };
-  });
-}
-
-function renderAlocacaoSugerida(){
-  const el = document.getElementById('fifoWarnings');
-  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
-
-  const sugestoes = calcularAlocacaoPorFamilia();
-  if(sugestoes.length === 0){ el.innerHTML = ''; return; }
-
-  const cards = sugestoes.map(s=>{
-    const familiaCor = familyColor(s.familia);
-    if(s.cheio){
-      return `<div class="aloc-card cheio">
-        <div class="familia" style="color:${familiaCor}">${escapeHtml(s.familia)}</div>
-        <div class="aloc-destino">🚫 Sem vaga — as ruas dessa família estão cheias e não há rua totalmente livre pra abrir</div>
-      </div>`;
-    }
-    const ladoTxt = s.lado === 'U' ? '' : ` · Lado ${escapeHtml(s.lado)}`;
-    const vagaTxt = s.vaga ? `Pos.${String(s.vaga.posicao).padStart(2,'0')}-P${s.vaga.palete}` : '—';
-    const novaRuaTxt = s.novaRua
-      ? `<div class="aloc-sub">🆕 as ruas atuais dessa família já estão cheias — abrindo rua nova</div>`
-      : '';
-    return `<div class="aloc-card">
-      <div class="familia" style="color:${familiaCor}">${escapeHtml(s.familia)}</div>
-      <div class="aloc-rua">Rua ${s.rua}${ladoTxt}</div>
-      <div class="aloc-destino">📥 Guardar no <strong>Andar ${s.andar}</strong> · sugestão: ${vagaTxt}</div>
-      <div class="aloc-sub">${s.livres} vaga(s) livre(s) nesse andar</div>
-      ${novaRuaTxt}
-    </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div class="saida-panel">
-      <span class="saida-title">Onde guardar o próximo palete (por família, seguindo o FIFO)</span>
-      <div class="saida-grid">${cards}</div>
-    </div>
-  `;
 }
 
 function renderFamilyLegend(){
@@ -2320,7 +2220,6 @@ function renderResultadoBuscaCodigo(){
 }
 
 function renderCargaTudo(){
-  renderListaProdutosCarga();
   renderCargaLista();
   const revisao = document.getElementById('cargaRevisaoMistos');
   if(revisao) revisao.innerHTML = ''; // a carga mudou, qualquer revisão pendente ficou desatualizada
@@ -2771,7 +2670,7 @@ function renderListaProdutosEntradaMisto(){
 function adicionarItemPaleteMisto(descricao, codigo){
   if(ITENS_PALETE_MISTO.some(i => i.produto === descricao)) return; // já está na lista
   const familia = familiaAutomaticaDoProduto(descricao) || '';
-  ITENS_PALETE_MISTO.push({ produto: descricao, codigo, familia, pacotes: null });
+  ITENS_PALETE_MISTO.push({ produto: descricao, codigo, familia, pacotes: null, dataProducao: '' });
   renderItensPaleteMisto();
 }
 
@@ -2788,6 +2687,11 @@ function atualizarFamiliaItemPaleteMisto(produto, familia){
 function atualizarPacotesItemPaleteMisto(produto, valor){
   const item = ITENS_PALETE_MISTO.find(i => i.produto === produto);
   if(item) item.pacotes = valor ? parseInt(valor, 10) : null;
+}
+
+function atualizarDataProducaoItemPaleteMisto(produto, valor){
+  const item = ITENS_PALETE_MISTO.find(i => i.produto === produto);
+  if(item) item.dataProducao = valor;
 }
 
 function renderItensPaleteMisto(){
@@ -2814,6 +2718,10 @@ function renderItensPaleteMisto(){
         <label class="entrada-label" style="margin-top:0;">Pacotes</label>
         <input type="number" min="1" class="entrada-data-input" value="${item.pacotes ?? ''}" placeholder="ex.: 40" data-acao="pacotes" data-produto="${escapeHtml(item.produto)}">
       </div>
+      <div style="width:150px;">
+        <label class="entrada-label" style="margin-top:0;">Data de produção</label>
+        <input type="date" class="entrada-data-input" value="${item.dataProducao || ''}" data-acao="data-producao" data-produto="${escapeHtml(item.produto)}">
+      </div>
       <button class="cr-remover" data-acao="remover-item" data-produto="${escapeHtml(item.produto)}" title="Remover">✕</button>
     </div>`;
   }).join('');
@@ -2824,6 +2732,9 @@ function renderItensPaleteMisto(){
   el.querySelectorAll('[data-acao="pacotes"]').forEach(inp=>{
     inp.addEventListener('input', () => atualizarPacotesItemPaleteMisto(inp.getAttribute('data-produto'), inp.value));
   });
+  el.querySelectorAll('[data-acao="data-producao"]').forEach(inp=>{
+    inp.addEventListener('input', () => atualizarDataProducaoItemPaleteMisto(inp.getAttribute('data-produto'), inp.value));
+  });
   el.querySelectorAll('[data-acao="remover-item"]').forEach(btn=>{
     btn.addEventListener('click', () => removerItemPaleteMisto(btn.getAttribute('data-produto')));
   });
@@ -2831,14 +2742,17 @@ function renderItensPaleteMisto(){
 
 function renderVagaMistoPreview(){
   const elPrev = document.getElementById('entradaVagaMistoPreview');
+  const elCodigo = document.getElementById('entradaMistoCodigoPreview');
   const btn = document.getElementById('btnConfirmarEntradaMisto');
   if(!VAGA_MISTO){
     elPrev.innerHTML = `<div class="carga-vazio">Não sobrou vaga em lugar nenhum pra essa família.</div>`;
+    elCodigo.innerHTML = '';
     btn.style.display = 'none';
     return;
   }
   const ladoTxt = VAGA_MISTO.lado === 'U' ? '' : ` Lado ${VAGA_MISTO.lado}`;
   elPrev.innerHTML = `<div class="entrada-vagas-lista"><div class="entrada-vaga-row">Rua ${VAGA_MISTO.rua}${ladoTxt} · Andar ${VAGA_MISTO.andar} · Pos.${String(VAGA_MISTO.posicao).padStart(2,'0')}-P${VAGA_MISTO.palete}</div></div>`;
+  elCodigo.innerHTML = `<div class="carga-dica" style="margin-top:8px;">Código do palete (se confirmar agora): <strong style="color:var(--frost);font-family:var(--font-mono);">${formatarDataHoraLocal()}</strong> <span style="opacity:.65;">— pode variar 1 minuto até o clique em confirmar; quem grava o valor final é o Apps Script.</span></div>`;
   btn.style.display = '';
 }
 
@@ -2858,12 +2772,11 @@ async function confirmarEntradaMisto(){
   if(semFamilia){ alert(`Escolha a família de "${semFamilia.produto}" antes de confirmar.`); return; }
   const semPacotes = ITENS_PALETE_MISTO.find(i => !i.pacotes || i.pacotes <= 0);
   if(semPacotes){ alert(`Informe a quantidade de pacotes de "${semPacotes.produto}" antes de confirmar.`); return; }
+  const semDataProducao = ITENS_PALETE_MISTO.find(i => !i.dataProducao);
+  if(semDataProducao){ alert(`Escolha a data de produção de "${semDataProducao.produto}" antes de confirmar.`); return; }
 
-  const dataProducaoInput = document.getElementById('entradaMistoDataProducao').value;
-  if(!dataProducaoInput){ alert('Escolha a data de produção do lote.'); return; }
   const dataInput = document.getElementById('entradaMistoData').value;
   if(!dataInput){ alert('Escolha a data de entrada.'); return; }
-  const dataProducaoBR = dataProducaoInput.split('-').reverse().join('/');
   const dataBR = dataInput.split('-').reverse().join('/');
 
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
@@ -2886,7 +2799,7 @@ async function confirmarEntradaMisto(){
         entradas: ITENS_PALETE_MISTO.map(item => ({
           familia: item.familia, produto: item.produto, codigo: item.codigo, pacotes: item.pacotes,
           rua: VAGA_MISTO.rua, lado: VAGA_MISTO.lado, andar: VAGA_MISTO.andar, posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
-          dataProducao: dataProducaoBR, dataEntrada: dataBR,
+          dataProducao: item.dataProducao.split('-').reverse().join('/'), dataEntrada: dataBR,
           grupoPalete: 0, // todos os produtos são o MESMO palete físico — mesmo código de rastreio
         })),
       }),
@@ -3130,12 +3043,6 @@ function inicializarAbaEntrada(){
 }
 
 function inicializarAbaCarga(){
-  const buscaCarga = document.getElementById('buscaCarga');
-  buscaCarga.addEventListener('input', ()=>{
-    FILTRO_CARGA = buscaCarga.value.trim().toLowerCase();
-    renderListaProdutosCarga();
-  });
-
   const buscaCodigo = document.getElementById('buscaCodigoPalete');
   const executar = () => {
     if(buscaCodigo.value.trim()) executarBuscaCodigoPalete(buscaCodigo.value);
@@ -3225,7 +3132,6 @@ function renderAll(){
   renderLinhasIgnoradas();
   renderPosicoes01Invalidas();
   renderProximosASair();
-  renderAlocacaoSugerida();
   renderEstoquePorProduto();
   renderFamilyLegend();
   if(andarAtual === null){
