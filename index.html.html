@@ -539,13 +539,21 @@
   <div class="carga-layout">
 
     <div class="carga-col-produtos">
-      <div class="carga-panel-title">Buscar palete pelo código</div>
+      <div class="carga-panel-title">Produtos em estoque</div>
+      <div class="busca-row">
+        <span class="busca-ico">🔍</span>
+        <input type="text" id="buscaCarga" class="busca-input" placeholder="Filtrar por nome ou código…" autocomplete="off">
+      </div>
+      <div class="carga-dica">Toque num produto (ou arraste, no computador) pra adicionar 1 palete à carga.</div>
+      <div id="listaProdutosCarga" class="carga-produtos-lista"></div>
+
+      <div class="carga-panel-title" style="margin-top:22px;">Ou buscar palete pelo código</div>
       <div class="busca-row">
         <span class="busca-ico">📦</span>
         <input type="text" id="buscaCodigoPalete" class="busca-input" placeholder="Código do palete (ex.: 20260725-1432)…" autocomplete="off">
         <button id="btnBuscarCodigoPalete" class="btn-sync" style="padding:8px 14px;">Buscar</button>
       </div>
-      <div class="carga-dica">Digite o código do palete pra ver todos os produtos dele de uma vez — inclusive paletes mistos. No futuro dá pra bipar em vez de digitar.</div>
+      <div class="carga-dica">Útil quando você já sabe o código (ex.: veio num romaneio) — acha de uma vez todos os produtos daquele palete, sem precisar buscar um por um.</div>
       <div id="resultadoBuscaCodigo"></div>
     </div>
 
@@ -674,6 +682,15 @@
     </div>
 
   </div>
+
+  <div class="carga-panel-title" style="margin-top:26px;">Consultar palete pelo código</div>
+  <div class="busca-row" style="max-width:420px;">
+    <span class="busca-ico">📦</span>
+    <input type="text" id="buscaCodigoConsulta" class="busca-input" placeholder="Código do palete (ex.: 20260727-0920)…" autocomplete="off">
+    <button id="btnBuscarCodigoConsulta" class="btn-sync" style="padding:8px 14px;">Buscar</button>
+  </div>
+  <div class="carga-dica">Digite o código pra ver quais produtos tem naquele palete e a quantidade de pacotes de cada um.</div>
+  <div id="resultadoBuscaCodigoConsulta"></div>
 
   <div class="carga-panel-title" style="margin-top:26px;">Lançamentos de hoje</div>
   <div id="entradasDeHojeLista"></div>
@@ -1992,6 +2009,40 @@ function buscarRegistrosPorCodigoPalete(codigo){
   return OCUPACAO_REGISTROS.filter(r => r.ocupado && r.codigoPalete && r.codigoPalete.trim().toLowerCase() === alvo);
 }
 
+/* Igual à de cima, mas pra consulta informativa (aba Entrada de Produto)
+   — não filtra por "ocupado", porque a pessoa pode querer conferir os
+   produtos de um palete que já saiu da câmara, não só o que ainda está
+   nela. */
+function buscarQualquerRegistroPorCodigoPalete(codigo){
+  const alvo = codigo.trim().toLowerCase();
+  if(!alvo) return [];
+  return OCUPACAO_REGISTROS.filter(r => r.codigoPalete && r.codigoPalete.trim().toLowerCase() === alvo);
+}
+
+function executarBuscaCodigoConsulta(codigo){
+  const registros = buscarQualquerRegistroPorCodigoPalete(codigo);
+  renderResultadoBuscaCodigoConsulta(codigo.trim(), registros);
+}
+
+function renderResultadoBuscaCodigoConsulta(codigo, registros){
+  const el = document.getElementById('resultadoBuscaCodigoConsulta');
+  if(!el) return;
+  if(registros.length === 0){
+    el.innerHTML = `<div class="carga-aviso" style="margin-top:10px;">⚠ Nenhum palete encontrado com o código "${escapeHtml(codigo)}".</div>`;
+    return;
+  }
+  const primeiro = registros[0];
+  const ladoTxt = primeiro.lado === 'U' ? '' : ` Lado ${primeiro.lado}`;
+  const linhas = registros.map(r => {
+    const statusTxt = r.ocupado ? '' : ` <span style="opacity:.65;">· já saiu (${escapeHtml(r.dataSaida)})</span>`;
+    return `<div class="entrada-vaga-row">${escapeHtml(r.produto)} — <strong>${r.pacotes ? `${r.pacotes} pacote${r.pacotes===1?'':'s'}` : 'sem pacotes registrados'}</strong>${statusTxt}</div>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(codigo)}</strong> — Rua ${primeiro.rua}${ladoTxt} · And.${primeiro.andar} · Pos.${String(primeiro.posicao).padStart(2,'0')}-P${primeiro.palete} · ${registros.length} produto${registros.length===1?'':'s'}:</div>
+    <div class="entrada-vagas-lista">${linhas}</div>
+  `;
+}
+
 /* Junta os dois jeitos de escolher o que sai na carga — busca por
    produto (FIFO, em CARGA_ITENS) e linhas exatas adicionadas via código
    de palete (em CARGA_ITENS_LINHA) — numa lista só de "unidades": cada
@@ -2252,6 +2303,7 @@ function renderResultadoBuscaCodigo(){
 }
 
 function renderCargaTudo(){
+  renderListaProdutosCarga();
   renderCargaLista();
   const revisao = document.getElementById('cargaRevisaoMistos');
   if(revisao) revisao.innerHTML = ''; // a carga mudou, qualquer revisão pendente ficou desatualizada
@@ -2854,18 +2906,19 @@ function renderEntradasDeHoje(){
     return;
   }
   el.innerHTML = `<div class="entradas-hoje-lista">${entradas.map(e=>{
-    const hora = (e.codigo && e.codigo.includes('-')) ? `${e.codigo.split('-')[1].slice(0,2)}:${e.codigo.split('-')[1].slice(2,4)}` : '—';
-    const ladoTxt = e.lado === 'U' ? '' : ` Lado ${e.lado}`;
-    const produtosTxt = e.produtos.length === 1
-      ? escapeHtml(e.produtos[0])
-      : `${escapeHtml(e.produtos[0])} <span style="opacity:.65;">+${e.produtos.length - 1} produto${e.produtos.length - 1 === 1 ? '' : 's'}</span>`;
-    const familiaCor = e.familia ? familyColor(e.familia) : 'var(--text-soft)';
+    const partesCodigo = (e.codigo || '').split('-');
+    const dataParte = partesCodigo[0] || '';
+    const horaParte = partesCodigo[1] || '';
+    const hora = horaParte.length === 4 ? `${horaParte.slice(0,2)}:${horaParte.slice(2,4)}` : '—';
+    const dataTxt = dataParte.length === 8 ? `${dataParte.slice(6,8)}/${dataParte.slice(4,6)}/${dataParte.slice(0,4)}` : dataHojeBR();
+    const misto = e.produtos.length > 1;
+    const tipoTxt = misto ? 'Palete misto' : 'Palete simples';
+    const tipoCor = misto ? 'var(--extra)' : 'var(--text-soft)';
     return `<div class="entrada-hoje-row">
       <span class="entrada-hoje-hora">${hora}</span>
-      <span class="estoque-swatch" style="background:${familiaCor};flex-shrink:0;"></span>
       <div class="entrada-hoje-info">
-        <div>${produtosTxt}</div>
-        <div class="entrada-hoje-endereco">Rua ${e.rua}${ladoTxt} · And.${e.andar} · Pos.${String(e.posicao).padStart(2,'0')}-P${e.palete}${e.codigo ? ` · ${escapeHtml(e.codigo)}` : ''}</div>
+        <div><strong style="font-family:var(--font-mono);color:var(--frost);">${escapeHtml(e.codigo || '—')}</strong></div>
+        <div class="entrada-hoje-endereco">${dataTxt} · <span style="color:${tipoCor};font-weight:600;">${tipoTxt}</span></div>
       </div>
     </div>`;
   }).join('')}</div>`;
@@ -3149,6 +3202,15 @@ function inicializarAbaEntrada(){
   document.getElementById('btnModoSimples').addEventListener('click', () => alternarModoEntrada('simples'));
   document.getElementById('btnModoMisto').addEventListener('click', () => alternarModoEntrada('misto'));
 
+  const buscaCodigoConsulta = document.getElementById('buscaCodigoConsulta');
+  const executarConsulta = () => {
+    if(buscaCodigoConsulta.value.trim()) executarBuscaCodigoConsulta(buscaCodigoConsulta.value);
+  };
+  document.getElementById('btnBuscarCodigoConsulta').addEventListener('click', executarConsulta);
+  buscaCodigoConsulta.addEventListener('keydown', e=>{
+    if(e.key === 'Enter') executarConsulta();
+  });
+
   const busca = document.getElementById('buscaEntradaProduto');
   busca.addEventListener('input', () => {
     FILTRO_ENTRADA = busca.value.trim().toLowerCase();
@@ -3199,6 +3261,12 @@ function inicializarAbaEntrada(){
 }
 
 function inicializarAbaCarga(){
+  const buscaCarga = document.getElementById('buscaCarga');
+  buscaCarga.addEventListener('input', ()=>{
+    FILTRO_CARGA = buscaCarga.value.trim().toLowerCase();
+    renderListaProdutosCarga();
+  });
+
   const buscaCodigo = document.getElementById('buscaCodigoPalete');
   const executar = () => {
     if(buscaCodigo.value.trim()) executarBuscaCodigoPalete(buscaCodigo.value);
