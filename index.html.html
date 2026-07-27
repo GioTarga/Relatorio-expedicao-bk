@@ -931,6 +931,7 @@ function normalizeOcupacaoRow(row){
   const pacotesTxt = (row['PACOTES'] || '').toString().trim();
   const pacotes = pacotesTxt ? parseInt(pacotesTxt, 10) : null;
   const codigoPalete = (row['CÓDIGO DE RASTREIO'] || row['CODIGO DE RASTREIO'] || row['CÓDIGO PALETE'] || row['CODIGO PALETE'] || '').trim();
+  const caminhao = (row['CAMINHÃO'] || row['CAMINHAO'] || '').trim();
 
   const faltando = [];
   if(!rua) faltando.push('RUA');
@@ -942,7 +943,7 @@ function normalizeOcupacaoRow(row){
   if(faltando.length){
     return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
   }
-  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, ocupado: !dataSaida } };
+  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, caminhao, ocupado: !dataSaida } };
 }
 
 /* Recebe o resultado de normalizeOcupacaoRow e "carimba" o número real da
@@ -2968,7 +2969,7 @@ function calcularSaidasDeHoje(){
       porPalete[key] = {
         codigo: r.codigoPalete, linha: r.linha, familia: r.familia,
         rua: r.rua, lado: r.lado, andar: r.andar, posicao: r.posicao, palete: r.palete,
-        dataSaidaDt: dt, produtos: [],
+        dataSaidaDt: dt, caminhao: r.caminhao, produtos: [],
       };
     }
     porPalete[key].produtos.push({ produto: r.produto, pacotes: r.pacotes });
@@ -2993,10 +2994,11 @@ function renderSaidasDeHoje(){
     const tipoCor = misto ? 'var(--extra)' : 'var(--text-soft)';
     const temHora = e.dataSaidaDt && (e.dataSaidaDt.getHours() !== 0 || e.dataSaidaDt.getMinutes() !== 0);
     const hora = temHora ? `${String(e.dataSaidaDt.getHours()).padStart(2,'0')}:${String(e.dataSaidaDt.getMinutes()).padStart(2,'0')}` : '—';
+    const caminhaoTxt = e.caminhao ? ` · 🚚 ${escapeHtml(e.caminhao)}` : '';
     return `<div class="entrada-hoje-row">
       <span class="entrada-hoje-hora">${hora}</span>
       <div class="entrada-hoje-info">
-        <div><strong style="font-family:var(--font-mono);color:var(--frost);">${escapeHtml(e.codigo || '—')}</strong></div>
+        <div><strong style="font-family:var(--font-mono);color:var(--frost);">${escapeHtml(e.codigo || '—')}</strong>${caminhaoTxt}</div>
         <div class="entrada-hoje-endereco">${escapeHtml(dataHojeBR())} · <span style="color:${tipoCor};font-weight:600;">${tipoTxt}</span></div>
         <div class="entrada-hoje-endereco">${textoProdutosPacotes(e.produtos)}</div>
       </div>
