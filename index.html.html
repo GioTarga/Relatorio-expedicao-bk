@@ -514,8 +514,6 @@
 
       <div id="posicoes01Alerta"></div>
 
-      <div id="proximosASair"></div>
-
       <div id="estoquePorProduto"></div>
 
       <div class="kpi-row" id="kpiRow"></div>
@@ -1286,25 +1284,6 @@ function diasEmEstoque(dataEntrada){
   return Math.max(0, Math.floor(ms / (1000*60*60*24)));
 }
 
-/* Pra cada família com paletes ocupados, pega os mais antigos (menor data de
-   entrada primeiro) — é essa lista que responde "o que eu preciso tirar
-   primeiro?" na prática, sem precisar entender a regra de andares. */
-function calcularProximosASair(porFamiliaLimite){
-  const porFamilia = {};
-  OCUPACAO_REGISTROS.forEach(r=>{
-    if(!r.ocupado || !r.familia) return;
-    if(!produtoCombina(r.produtos)) return; // respeita a busca de produto, se houver
-    const dias = diasEmEstoque(r.dataEntrada);
-    if(dias === null) return; // sem data válida, não dá pra priorizar
-    (porFamilia[r.familia] = porFamilia[r.familia] || []).push({...r, dias});
-  });
-  Object.keys(porFamilia).forEach(f=>{
-    porFamilia[f].sort((a,b)=> b.dias - a.dias); // mais dias parado primeiro
-    porFamilia[f] = porFamilia[f].slice(0, porFamiliaLimite);
-  });
-  return porFamilia;
-}
-
 /* Mostra quais linhas da aba Ocupação foram descartadas por dado
    incompleto e por quê — sem isso, um erro de digitação faz um palete
    inteiro sumir do painel sem ninguém perceber. */
@@ -1361,44 +1340,6 @@ function renderConflitos(){
     <div class="conflito-panel">
       <span class="conflito-title">${OCUPACAO_CONFLITOS.length} posição(ões) com registro duplicado</span>
       <ul>${itens}</ul>
-    </div>
-  `;
-}
-
-function renderProximosASair(){
-  const el = document.getElementById('proximosASair');
-  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
-
-  const porFamilia = calcularProximosASair(3);
-  const familias = Object.keys(porFamilia).sort();
-  if(familias.length === 0){
-    el.innerHTML = FILTRO_PRODUTO
-      ? `<div class="busca-resultado">Nenhum palete em estoque bate com "${escapeHtml(FILTRO_PRODUTO)}".</div>`
-      : '';
-    return;
-  }
-
-  const cards = familias.map(f=>{
-    const itens = porFamilia[f].map(r=>{
-      const ladoTxt = r.lado === 'U' ? '' : `${escapeHtml(r.lado)} · `;
-      return `<div class="item-wrap">
-        <div class="item">
-          <span class="pos">Rua ${r.rua} · ${ladoTxt}And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</span>
-          <span class="dias">${r.dias}d</span>
-        </div>
-        ${r.produtos.length ? `<div class="item-produto">${produtosHtml(r.produtos)}</div>` : ''}
-      </div>`;
-    }).join('');
-    return `<div class="saida-card">
-      <div class="familia" style="color:${familyColor(f)}">${escapeHtml(f)}</div>
-      ${itens}
-    </div>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div class="saida-panel">
-      <span class="saida-title">Retirar primeiro (mais antigos por família)${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
-      <div class="saida-grid">${cards}</div>
     </div>
   `;
 }
@@ -1548,14 +1489,14 @@ function renderGraficoFamilias(){
     valores = labels.map(f => porFamilia[f]);
     totalBase = total;
     titulo = `Ocupação por família — ${rotuloAndarSelecionado()}`;
-    subtitulo = 'Fatia = % dos paletes ocupados hoje. Clique numa família pra ver os produtos dela.';
+    subtitulo = 'Barra = % dos paletes ocupados hoje. Clique numa família pra ver os produtos dela.';
   } else {
     const { porProduto, total } = calcularProdutosDaFamilia(GRAFICO_FAMILIA_ATUAL);
     labels = Object.keys(porProduto).sort((a, b) => porProduto[b] - porProduto[a]);
     valores = labels.map(p => porProduto[p]);
     totalBase = total;
     titulo = `Produtos da família "${GRAFICO_FAMILIA_ATUAL}" — ${rotuloAndarSelecionado()}`;
-    subtitulo = 'Paletes mistos contam pra mais de um produto — a soma das fatias pode passar de 100%.';
+    subtitulo = 'Paletes mistos contam pra mais de um produto — a soma pode passar de 100%.';
   }
 
   if(labels.length === 0){
@@ -1565,12 +1506,22 @@ function renderGraficoFamilias(){
 
   cores = labels.map((_, i) => corDoGrafico(i));
 
+  // altura fixa pra caber ~7 barras visíveis; o resto rola dentro do
+  // container, sem esconder nenhum item nem precisar agrupar em "outras"
+  const ALTURA_POR_BARRA = 34;
+  const alturaTotal = labels.length * ALTURA_POR_BARRA;
+  const alturaVisivel = Math.min(alturaTotal, ALTURA_POR_BARRA * 7);
+
   el.innerHTML = `
     <div class="grafico-panel">
       <div class="ocupacao-title">${escapeHtml(titulo)}</div>
       <div class="grafico-sub">${subtitulo}</div>
       ${!visaoFamilia ? `<button id="btnVoltarFamilias" class="btn-voltar-grafico">&larr; Voltar para famílias</button>` : ''}
-      <div class="grafico-wrap"><canvas id="canvasFamilias"></canvas></div>
+      <div style="max-height:${alturaVisivel}px;overflow-y:auto;margin-top:10px;border:1px solid var(--ice-line);border-radius:10px;background:var(--bg-soft);">
+        <div style="position:relative;width:100%;height:${alturaTotal}px;">
+          <canvas id="canvasFamilias" role="img" aria-label="${escapeHtml(titulo)}"></canvas>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1584,13 +1535,13 @@ function renderGraficoFamilias(){
   if(CHART_FAMILIAS) CHART_FAMILIAS.destroy();
   const ctx = document.getElementById('canvasFamilias').getContext('2d');
   CHART_FAMILIAS = new Chart(ctx, {
-    type: 'doughnut',
-    plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
+    type: 'bar',
     data: {
       labels,
-      datasets: [{ data: valores, backgroundColor: cores, borderColor: cssVar('--panel'), borderWidth: 2, hoverOffset: 6 }],
+      datasets: [{ data: valores, backgroundColor: cores, borderRadius: 4, barThickness: 20 }],
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
@@ -1598,22 +1549,15 @@ function renderGraficoFamilias(){
         tooltip: {
           callbacks: {
             label: (item) => {
-              const pct = totalBase ? Math.round((item.parsed / totalBase) * 100) : 0;
-              return ` ${item.label}: ${pct}% (${item.parsed} palete${item.parsed === 1 ? '' : 's'})`;
+              const pct = totalBase ? Math.round((item.parsed.x / totalBase) * 100) : 0;
+              return ` ${item.label}: ${pct}% (${item.parsed.x} palete${item.parsed.x === 1 ? '' : 's'})`;
             },
           },
         },
-        datalabels: {
-          color: '#fff',
-          font: { family: 'Inter', weight: '700', size: 11 },
-          textAlign: 'center',
-          display: 'auto', // esconde sozinho os rótulos que não couberem, em vez de empilhar
-          formatter: (valor, contexto) => {
-            const pct = totalBase ? Math.round((valor / totalBase) * 100) : 0;
-            const nome = contexto.chart.data.labels[contexto.dataIndex];
-            return `${nome}\n${pct}%`;
-          },
-        },
+      },
+      scales: {
+        x: { grid: { color: cssVar('--ice-line') }, ticks: { color: cssVar('--text-soft') } },
+        y: { grid: { display: false }, ticks: { color: cssVar('--text'), font: { size: 11.5 } } },
       },
       onClick: visaoFamilia ? (evt, elementos) => {
         if(!elementos.length) return;
@@ -3393,7 +3337,6 @@ function renderAll(){
   renderConflitos();
   renderLinhasIgnoradas();
   renderPosicoes01Invalidas();
-  renderProximosASair();
   renderEstoquePorProduto();
   renderFamilyLegend();
   renderEntradasDeHoje();
