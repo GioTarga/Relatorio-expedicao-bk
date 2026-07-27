@@ -2965,16 +2965,14 @@ function renderSaidasDeHoje(){
     return;
   }
   el.innerHTML = `<div class="entradas-hoje-lista">${saidas.map(e=>{
-    const ladoTxt = e.lado === 'U' ? '' : ` Lado ${e.lado}`;
-    const produtosTxt = e.produtos.length === 1
-      ? escapeHtml(e.produtos[0])
-      : `${escapeHtml(e.produtos[0])} <span style="opacity:.65;">+${e.produtos.length - 1} produto${e.produtos.length - 1 === 1 ? '' : 's'}</span>`;
-    const familiaCor = e.familia ? familyColor(e.familia) : 'var(--text-soft)';
+    const misto = e.produtos.length > 1;
+    const tipoTxt = misto ? 'Palete misto' : 'Palete simples';
+    const tipoCor = misto ? 'var(--extra)' : 'var(--text-soft)';
     return `<div class="entrada-hoje-row">
-      <span class="estoque-swatch" style="background:${familiaCor};flex-shrink:0;"></span>
+      <span class="entrada-hoje-hora">—</span>
       <div class="entrada-hoje-info">
-        <div>${produtosTxt}${e.pacotes ? ` <span style="opacity:.65;">· ${e.pacotes} pacote${e.pacotes===1?'':'s'}</span>` : ''}</div>
-        <div class="entrada-hoje-endereco">Rua ${e.rua}${ladoTxt} · And.${e.andar} · Pos.${String(e.posicao).padStart(2,'0')}-P${e.palete}${e.codigo ? ` · ${escapeHtml(e.codigo)}` : ''}</div>
+        <div><strong style="font-family:var(--font-mono);color:var(--frost);">${escapeHtml(e.codigo || '—')}</strong></div>
+        <div class="entrada-hoje-endereco">${escapeHtml(dataHojeBR())} · <span style="color:${tipoCor};font-weight:600;">${tipoTxt}</span></div>
       </div>
     </div>`;
   }).join('')}</div>`;
