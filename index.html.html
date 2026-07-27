@@ -514,8 +514,6 @@
 
       <div id="posicoes01Alerta"></div>
 
-      <div id="estoquePorProduto"></div>
-
       <div class="kpi-row" id="kpiRow"></div>
 
       <div class="legend">
@@ -1825,55 +1823,6 @@ function renderOcupacaoPainel(){
       renderOcupacaoPainel(); // só esse painel precisa re-renderizar
     });
   });
-}
-
-/* Soma quantos PALETES têm cada produto em estoque agora. Um palete com
-   mais de um produto (ex: "Pão Francês, Baguete") conta como 1 palete
-   PRA CADA produto dele — porque fisicamente aquele produto está mesmo
-   ocupando aquele palete, mesmo dividindo espaço com outro. Isso é
-   intencional: a soma de todos os produtos pode passar do total de
-   paletes ocupados, e é isso que se espera quando um palete é misto. */
-function calcularEstoquePorProduto(){
-  const porProduto = {}; // produto -> { paletes, familia }
-  registrosDoAndarSelecionado().forEach(r=>{
-    if(!r.ocupado || r.produtos.length === 0) return;
-    r.produtos.forEach(p=>{
-      if(!produtoCombina([p])) return; // respeita a busca ativa
-      if(!porProduto[p]) porProduto[p] = { paletes: 0, familia: r.familia || '' };
-      porProduto[p].paletes += 1;
-    });
-  });
-  return Object.entries(porProduto)
-    .map(([produto, info]) => ({ produto, ...info }))
-    .sort((a,b) => b.paletes - a.paletes || a.produto.localeCompare(b.produto, 'pt-BR'));
-}
-
-function renderEstoquePorProduto(){
-  const el = document.getElementById('estoquePorProduto');
-  if(OCUPACAO_REGISTROS.length === 0){ el.innerHTML = ''; return; }
-
-  const lista = calcularEstoquePorProduto();
-  if(lista.length === 0){
-    el.innerHTML = FILTRO_PRODUTO
-      ? `<div class="busca-resultado">Nenhum produto em estoque bate com "${escapeHtml(FILTRO_PRODUTO)}".</div>`
-      : '';
-    return;
-  }
-
-  const linhas = lista.map(item => `
-    <div class="estoque-row">
-      <span class="estoque-swatch" style="background:${item.familia ? familyColor(item.familia) : 'var(--text-soft)'}"></span>
-      <span class="estoque-nome">${escapeHtml(item.produto)}</span>
-      <span class="estoque-qtd">${item.paletes} palete${item.paletes === 1 ? '' : 's'}</span>
-    </div>
-  `).join('');
-
-  el.innerHTML = `
-    <div class="saida-panel">
-      <span class="saida-title">Estoque por produto (em paletes) — ${rotuloAndarSelecionado()}${FILTRO_PRODUTO ? ` — filtrando por "${escapeHtml(FILTRO_PRODUTO)}"` : ''}</span>
-      <div class="estoque-list">${linhas}</div>
-    </div>
-  `;
 }
 
 function renderKPIs(){
@@ -3350,7 +3299,6 @@ function renderAll(){
   renderConflitos();
   renderLinhasIgnoradas();
   renderPosicoes01Invalidas();
-  renderEstoquePorProduto();
   renderFamilyLegend();
   renderEntradasDeHoje();
   renderSaidasDeHoje();
