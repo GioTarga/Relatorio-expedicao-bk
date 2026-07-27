@@ -572,6 +572,10 @@
         </svg>
       </div>
       <div id="cargaResumo" class="carga-resumo"></div>
+
+      <label class="entrada-label" style="margin-top:10px;">Identificação do caminhão</label>
+      <input type="text" id="inputCaminhao" class="entrada-data-input" placeholder="ex.: BK-1042 ou 1042" style="max-width:220px;text-transform:uppercase;" maxlength="20">
+
       <div id="cargaLista" class="carga-lista"></div>
       <div id="cargaRevisaoMistos"></div>
       <div class="carga-acoes">
@@ -803,6 +807,7 @@ let CARGA_ITENS = [];          // [{ produto, quantidade }] — carga em montage
 let CARGA_ITENS_LINHA = [];    // [{ linha, produto, rua, lado, andar, posicao, palete, pacotes, produtosOriginais }] — linhas exatas adicionadas via código de palete (bipagem)
 let BUSCA_CODIGO_RESULTADO = null; // resultado da última busca por código de palete, aguardando escolha de quais produtos entram na carga
 let ULTIMA_CARGA_CONFIRMADA = null; // retrato da última carga confirmada, pra poder reimprimir o PDF depois
+let ULTIMA_CARGA_CONFIRMADA_CAMINHAO = ''; // caminhão usado naquela carga, pra reimpressão manter a mesma info
 
 let PRODUTOS_CATALOGO = [];    // [{ codigo, descricao }] — catálogo oficial vindo do CIGAM (aba "Produtos")
 let FILTRO_ENTRADA = '';       // texto de busca — aba Nova Entrada (modo simples)
@@ -2333,7 +2338,7 @@ function construirEstruturaPdf(){
    por texto solto. Evita emoji no PDF (a fonte padrão do jsPDF não
    suporta e vira caractere quebrado); avisos usam texto + cor em vez
    disso. */
-function renderizarPdfRomaneio(estrutura){
+function renderizarPdfRomaneio(estrutura, caminhao){
   if(!estrutura || estrutura.length === 0) return;
   if(!window.jspdf || !window.jspdf.jsPDF){
     alert('Não foi possível carregar a biblioteca de PDF (sem conexão com a internet?). Tente novamente.');
@@ -2368,7 +2373,7 @@ function renderizarPdfRomaneio(estrutura){
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(40, 40, 40);
-  doc.text(`Total da carga: ${totalPaletes} palete(s)  -  ${estrutura.length} produto(s) diferente(s)`, margemX, y);
+  doc.text(`Total da carga: ${totalPaletes} palete(s)  -  ${estrutura.length} produto(s) diferente(s)${caminhao ? `  -  Caminhao: ${caminhao}` : ''}`, margemX, y);
   y += 6;
 
   estrutura.forEach(item => {
@@ -2445,7 +2450,8 @@ function renderizarPdfRomaneio(estrutura){
 
 function gerarPDFCarga(){
   if(CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0) return;
-  renderizarPdfRomaneio(construirEstruturaPdf());
+  const caminhaoEl = document.getElementById('inputCaminhao');
+  renderizarPdfRomaneio(construirEstruturaPdf(), caminhaoEl ? caminhaoEl.value.trim() : '');
 }
 
 /* Manda a carga montada pro Apps Script, que preenche a DATA SAÍDA de hoje
@@ -2498,6 +2504,9 @@ function montarPaletesDaCarga(){
 async function confirmarCargaRetirada(){
   if(CARGA_ITENS.length === 0 && CARGA_ITENS_LINHA.length === 0) return;
 
+  const caminhao = document.getElementById('inputCaminhao').value.trim();
+  if(!caminhao){ alert('Informe a identificação do caminhão antes de confirmar a carga.'); return; }
+
   if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
     alert('A confirmação automática ainda não foi configurada.\n\nÉ preciso publicar o Apps Script e colar a URL dele na constante APPS_SCRIPT_URL, no início do código. Enquanto isso, continue registrando a DATA SAÍDA manualmente na planilha.');
     return;
@@ -2507,17 +2516,17 @@ async function confirmarCargaRetirada(){
   const ambiguos = paletes.filter(p => p.ambiguo);
 
   if(ambiguos.length > 0){
-    mostrarRevisaoPaletesMistos(paletes);
+    mostrarRevisaoPaletesMistos(paletes, caminhao);
     return; // espera a decisão da pessoa pra cada palete misto antes de seguir
   }
 
-  await enviarConfirmacaoCarga(paletes);
+  await enviarConfirmacaoCarga(paletes, caminhao);
 }
 
 /* Mostra, pra cada palete misto ambíguo, o que está indo na carga e o que
    ele também carrega — a pessoa escolhe se leva o palete inteiro ou só o
    que foi pedido (deixando o resto na câmara, posição continua ocupada). */
-function mostrarRevisaoPaletesMistos(paletes){
+function mostrarRevisaoPaletesMistos(paletes, caminhao){
   const el = document.getElementById('cargaRevisaoMistos');
   const ambiguos = paletes.filter(p => p.ambiguo);
 
@@ -2555,7 +2564,7 @@ function mostrarRevisaoPaletesMistos(paletes){
       p.tipo = escolhido;
     });
     el.innerHTML = '';
-    await enviarConfirmacaoCarga(paletes);
+    await enviarConfirmacaoCarga(paletes, caminhao);
   });
 }
 
@@ -2563,8 +2572,8 @@ function mostrarRevisaoPaletesMistos(paletes){
    DATA SAÍDA (posição libera). Paletes "parcial" só tiram os produtos
    pedidos da lista da coluna PRODUTO daquela linha — a posição continua
    ocupada, porque ainda sobrou produto físico nela. */
-async function enviarConfirmacaoCarga(paletes){
-  if(!confirm(`Confirmar a retirada de ${paletes.length} palete(s)?\n\nIsso atualiza a planilha agora mesmo (via Apps Script). Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
+async function enviarConfirmacaoCarga(paletes, caminhao){
+  if(!confirm(`Confirmar a retirada de ${paletes.length} palete(s) no caminhão ${caminhao}?\n\nIsso atualiza a planilha agora mesmo (via Apps Script). Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
 
   const btn = document.getElementById('btnConfirmarCarga');
   const textoOriginal = btn.textContent;
@@ -2576,6 +2585,7 @@ async function enviarConfirmacaoCarga(paletes){
       method: 'POST',
       body: JSON.stringify({
         token: APPS_SCRIPT_TOKEN,
+        caminhao,
         paletes: paletes.map(p => ({
           linha: p.linha,
           rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete,
@@ -2604,11 +2614,13 @@ async function enviarConfirmacaoCarga(paletes){
     // já vai estar diferente, então recalcular do zero não serviria mais
     // pra reimprimir o mesmo romaneio
     ULTIMA_CARGA_CONFIRMADA = construirEstruturaPdf();
+    ULTIMA_CARGA_CONFIRMADA_CAMINHAO = caminhao;
     document.getElementById('btnReimprimirPdf').style.display = '';
 
     CARGA_ITENS = [];
     CARGA_ITENS_LINHA = [];
     BUSCA_CODIGO_RESULTADO = null;
+    document.getElementById('inputCaminhao').value = '';
     const resultadoEl = document.getElementById('resultadoBuscaCodigo');
     if(resultadoEl) resultadoEl.innerHTML = '';
     renderCargaTudo();
@@ -3273,6 +3285,18 @@ function inicializarAbaEntrada(){
 }
 
 function inicializarAbaCarga(){
+  const inputCaminhao = document.getElementById('inputCaminhao');
+  inputCaminhao.addEventListener('input', ()=>{
+    const cursor = inputCaminhao.selectionStart;
+    const limpo = inputCaminhao.value.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if(limpo !== inputCaminhao.value){
+      inputCaminhao.value = limpo;
+      inputCaminhao.setSelectionRange(cursor, cursor);
+    } else {
+      inputCaminhao.value = limpo;
+    }
+  });
+
   const buscaCarga = document.getElementById('buscaCarga');
   buscaCarga.addEventListener('input', ()=>{
     FILTRO_CARGA = buscaCarga.value.trim().toLowerCase();
@@ -3305,7 +3329,7 @@ function inicializarAbaCarga(){
   document.getElementById('btnGerarPdf').addEventListener('click', gerarPDFCarga);
   document.getElementById('btnConfirmarCarga').addEventListener('click', confirmarCargaRetirada);
   document.getElementById('btnReimprimirPdf').addEventListener('click', ()=>{
-    if(ULTIMA_CARGA_CONFIRMADA) renderizarPdfRomaneio(ULTIMA_CARGA_CONFIRMADA);
+    if(ULTIMA_CARGA_CONFIRMADA) renderizarPdfRomaneio(ULTIMA_CARGA_CONFIRMADA, ULTIMA_CARGA_CONFIRMADA_CAMINHAO);
   });
 
   renderCargaTudo();
