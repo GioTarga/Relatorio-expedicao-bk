@@ -90,11 +90,6 @@
 
   .content{ flex:1; min-width:0; }
 
-  .kpi-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
-  .kpi-card{ background:var(--panel); border:1px solid var(--ice-line); border-radius:12px; padding:14px 16px; }
-  .kpi-card .lbl{ font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text-soft); font-weight:700; margin-bottom:6px; }
-  .kpi-card .val{ font-size:22px; font-weight:800; color:var(--frost); font-family:var(--font-mono); }
-
   .rua-panel{
     background:var(--panel); border:1px solid var(--ice-line); border-radius:14px;
     padding:20px 22px; margin-bottom:18px;
@@ -463,10 +458,29 @@
   }
 
   @media (max-width:900px){
+    .app-shell{ flex-direction:column; }
+    .side-nav{
+      width:100%; height:auto; position:sticky; top:0; z-index:20;
+      flex-direction:row; align-items:center; padding:6px 10px; overflow-x:auto;
+      border-right:none; border-bottom:1px solid var(--ice-line);
+    }
+    .side-nav-brand{
+      padding:0 14px 0 0; border-bottom:none; border-right:1px solid var(--ice-line);
+      margin-bottom:0; flex-shrink:0; white-space:nowrap;
+    }
+    .side-nav-btn{
+      border-left:none; border-bottom:3px solid transparent; white-space:nowrap; padding:12px 14px;
+    }
+    .side-nav-btn.active{ border-left-color:transparent; border-bottom-color:var(--brand); }
+    .container{ padding:18px 14px 50px; }
     .layout{ flex-direction:column; }
     .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
     .floor-btn-divisor{ width:1px; height:32px; margin:0 2px; }
-    .kpi-row{ grid-template-columns:repeat(2,1fr); }
+  }
+
+  @media (max-width:520px){
+    .cr-step-btn{ width:34px; height:34px; font-size:16px; }
+    .cr-remover{ width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; }
   }
 </style>
 </head>
@@ -911,11 +925,23 @@ function produtosHtml(produtos){
 }
 
 /* Cor determinística por família, pra não precisar cadastrar cor manualmente */
-function familyColor(nome){
+function familyHue(nome){
   let hash = 0;
   for(let i=0; i<nome.length; i++) hash = nome.charCodeAt(i) + ((hash<<5)-hash);
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 58%, 42%)`;
+  return Math.abs(hash) % 360;
+}
+function familyColor(nome){
+  return `hsl(${familyHue(nome)}, 58%, 42%)`;
+}
+/* Variação de tom (mesmo matiz da família, luminosidade diferente) — usada
+   no drill-down de produtos, pra cada barra continuar visualmente "da
+   família", em vez de cores soltas sem relação com o resto do painel. */
+function tomDaFamilia(nome, indice, total){
+  const hue = familyHue(nome);
+  const min = 28, max = 62;
+  const passo = total > 1 ? (max - min) / (total - 1) : 0;
+  const l = Math.round(max - indice * passo);
+  return `hsl(${hue}, 58%, ${l}%)`;
 }
 
 /* Valida e normaliza uma linha da aba "Ocupação". Em vez de só descartar
@@ -1475,14 +1501,6 @@ function cssVar(nome){
   return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
 }
 
-/* Paleta própria pros gráficos — tons vermelho/dourado da marca, em vez
-   da cor por hash usada no mapa (lá a prioridade é diferenciar família
-   visualmente; aqui a prioridade é ficar visivelmente "Bread King"). */
-const PALETA_GRAFICO = ['#8B1F24', '#D9A441', '#C97A2B', '#B4552A', '#5C1518', '#E0B96B', '#6B3A1E', '#A83A2F', '#8A6B2B', '#4E1114'];
-function corDoGrafico(indice){
-  return PALETA_GRAFICO[indice % PALETA_GRAFICO.length];
-}
-
 let CHART_FAMILIAS = null;
 let CHART_AGING = null;
 let GRAFICO_FAMILIA_ATUAL = null; // null = visão por família; nome da família = drill-down por produto
@@ -1538,7 +1556,9 @@ function renderGraficoFamilias(){
     return;
   }
 
-  cores = labels.map((_, i) => corDoGrafico(i));
+  cores = visaoFamilia
+    ? labels.map(f => familyColor(f))
+    : labels.map((_, i) => tomDaFamilia(GRAFICO_FAMILIA_ATUAL, i, labels.length));
 
   // altura fixa pra caber 8 barras visíveis; o resto rola dentro do
   // container, sem esconder nenhum item nem precisar agrupar em "outras"
