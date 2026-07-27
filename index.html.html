@@ -1506,11 +1506,11 @@ function renderGraficoFamilias(){
 
   cores = labels.map((_, i) => corDoGrafico(i));
 
-  // altura fixa pra caber ~7 barras visíveis; o resto rola dentro do
+  // altura fixa pra caber 8 barras visíveis; o resto rola dentro do
   // container, sem esconder nenhum item nem precisar agrupar em "outras"
   const ALTURA_POR_BARRA = 34;
   const alturaTotal = labels.length * ALTURA_POR_BARRA;
-  const alturaVisivel = Math.min(alturaTotal, ALTURA_POR_BARRA * 7);
+  const alturaVisivel = Math.min(alturaTotal, ALTURA_POR_BARRA * 8);
 
   el.innerHTML = `
     <div class="grafico-panel">
@@ -1536,6 +1536,7 @@ function renderGraficoFamilias(){
   const ctx = document.getElementById('canvasFamilias').getContext('2d');
   CHART_FAMILIAS = new Chart(ctx, {
     type: 'bar',
+    plugins: window.ChartDataLabels ? [window.ChartDataLabels] : [],
     data: {
       labels,
       datasets: [{ data: valores, backgroundColor: cores, borderRadius: 4, barThickness: 20 }],
@@ -1544,6 +1545,7 @@ function renderGraficoFamilias(){
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { right: 46 } }, // espaço pro rótulo de % não cortar na borda
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1554,9 +1556,20 @@ function renderGraficoFamilias(){
             },
           },
         },
+        datalabels: {
+          anchor: 'end',
+          align: 'end',
+          color: cssVar('--text-soft'),
+          font: { family: 'Inter', weight: '700', size: 10.5 },
+          formatter: (valor) => `${totalBase ? Math.round((valor / totalBase) * 100) : 0}%`,
+        },
       },
       scales: {
-        x: { grid: { color: cssVar('--ice-line') }, ticks: { color: cssVar('--text-soft') } },
+        x: {
+          title: { display: true, text: 'Paletes ocupados', color: cssVar('--text-soft'), font: { size: 11 } },
+          grid: { color: cssVar('--ice-line') },
+          ticks: { color: cssVar('--text-soft') },
+        },
         y: { grid: { display: false }, ticks: { color: cssVar('--text'), font: { size: 11.5 } } },
       },
       onClick: visaoFamilia ? (evt, elementos) => {
