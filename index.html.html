@@ -2,6 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Câmara Fria — Planta de Endereçamento · Bread King</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -198,7 +199,7 @@
   .busca-row:focus-within{ border-color:var(--frost-dim); }
   .busca-ico{ font-size:13px; opacity:0.7; }
   .busca-input{
-    flex:1; background:none; border:none; outline:none; color:var(--text);
+    flex:1; min-width:0; background:none; border:none; outline:none; color:var(--text);
     font-size:13.5px; font-family:inherit;
   }
   .busca-input::placeholder{ color:var(--text-soft); }
@@ -474,6 +475,7 @@
     .side-nav-btn.active{ border-left-color:transparent; border-bottom-color:var(--brand); }
     .container{ padding:18px 14px 50px; }
     .layout{ flex-direction:column; }
+    .carga-col-produtos, .carga-col-caminhao{ min-width:0; flex-basis:100%; }
     .floor-panel{ flex-direction:row; position:static; width:100%; overflow-x:auto; }
     .floor-btn-divisor{ width:1px; height:32px; margin:0 2px; }
   }
