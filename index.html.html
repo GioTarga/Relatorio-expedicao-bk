@@ -58,6 +58,18 @@
     pointer-events:none;
   }
   .topbar-inner{ position:relative; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; max-width:1400px; margin:0 auto; }
+  .camara-switch{ display:flex; gap:8px; }
+  .camara-btn{
+    background:var(--bg-soft); border:1px solid var(--ice-line); color:var(--text-soft);
+    border-radius:9px; padding:9px 16px; font-size:12.5px; font-weight:700; letter-spacing:0.3px;
+    font-family:inherit; cursor:pointer; transition:all 0.15s;
+  }
+  .camara-btn:hover{ border-color:var(--frost-dim); color:var(--text); }
+  .camara-btn.active{
+    background:linear-gradient(135deg, rgba(217,164,65,0.22), rgba(217,164,65,0.06));
+    border-color:var(--frost); color:var(--frost);
+    box-shadow:0 0 16px rgba(217,164,65,0.25);
+  }
   .brand-block .eyebrow{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:3px; text-transform:uppercase; color:var(--brand); font-weight:600; margin-bottom:6px; }
   .brand-block h1{ margin:0; font-family:var(--font-display); font-size:29px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
   .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:normal; }
@@ -509,6 +521,9 @@
           <h1>Planta da Câmara Fria</h1>
           <div class="subtitle">Mapa de endereçamento por rua e andar</div>
         </div>
+        <div class="camara-switch" id="camaraSwitch">
+          <!-- botões gerados via JS: Câmara 1 / 2 / 3 -->
+        </div>
       </div>
     </div>
 
@@ -741,40 +756,60 @@
 
 <script>
 /* ======================================================================
-   ESTRUTURA DA CÂMARA FRIA
-   - 4 ruas, 4 andares cada
-   - Ruas 1, 2 e 3: dois lados (A e B), cada lado com 20 + 2(extra) + 20 posições
-   - Rua 4: um único lado, também 20 + 2(extra) + 20 posições
+   ESTRUTURA DAS CÂMARAS FRIAS
+   Cada câmara tem seu próprio endereçamento (Rua 1-4 independente) — a
+   Câmara 1 tem posições maiores (com a faixa "extra" nos andares 3/4 e a
+   exceção da Posição 01 com 1 palete só); as Câmaras 2 e 3 são gêmeas
+   idênticas, menores e sem exceção nenhuma (todas as posições valem 2
+   paletes, sem faixa extra).
    ====================================================================== */
-const RUAS = [
+const RUAS_PADRAO = [
   { numero: 1, lados: ['A','B'] },
   { numero: 2, lados: ['A','B'] },
   { numero: 3, lados: ['A','B'] },
-  { numero: 4, lados: ['U'] }, // único lado
+  { numero: 4, lados: ['U'] }, // único lado, perto da porta
 ];
-const ANDARES = [1,2,3,4];
-const POS_POR_LADO = 42; // 20 + 2 + 20
-const EXTRA_START = 20;  // índice 0-based onde começam as 2 posições extras (posições 21 e 22)
-const EXTRA_COUNT = 2;
-/* Lado da parede onde cada porta fica, em relação ao rack daquela rua:
-   'top' = parede/porta ficam ANTES do primeiro lado (atrás do Lado A, no
-   caso da Rua 1); 'bottom' = ficam DEPOIS do último lado (Rua 4). */
-const PORTA_SIDE = { 1: 'top', 4: 'bottom' };
+const PORTA_SIDE_PADRAO = { 1: 'top', 4: 'bottom' };
+const PORTA_POR_RUA_PADRAO = { 1: 'Entrada', 4: 'Saída' };
 
-const PALETES_POR_POSICAO = 2; // cada posição comporta 2 paletes, lado a lado
+const CAMARAS = {
+  1: {
+    nome: 'Câmara 1',
+    ruas: RUAS_PADRAO,
+    posPorLado: 42, extraStart: 20, extraCount: 2, // 20 + 2(extra) + 20
+    portaSide: PORTA_SIDE_PADRAO, portaPorRua: PORTA_POR_RUA_PADRAO,
+    andarTemExtra: (andar) => andar === 3 || andar === 4, // faixa extra só existe fisicamente nos andares 3/4
+    paletesDaPosicao: (numero) => numero === 1 ? 1 : 2,   // Posição 01 de cada andar só cabe 1 palete
+  },
+  2: {
+    nome: 'Câmara 2',
+    ruas: RUAS_PADRAO,
+    posPorLado: 8, extraStart: null, extraCount: 0, // sem faixa extra
+    portaSide: PORTA_SIDE_PADRAO, portaPorRua: PORTA_POR_RUA_PADRAO,
+    andarTemExtra: () => false,
+    paletesDaPosicao: () => 2, // toda posição vale 2 paletes, sem exceção
+  },
+  3: {
+    nome: 'Câmara 3',
+    ruas: RUAS_PADRAO,
+    posPorLado: 8, extraStart: null, extraCount: 0,
+    portaSide: PORTA_SIDE_PADRAO, portaPorRua: PORTA_POR_RUA_PADRAO,
+    andarTemExtra: () => false,
+    paletesDaPosicao: () => 2,
+  },
+};
 
-/* Portas da câmara — são apenas 2 no total, uma em cada ponta: a Porta 01
-   fica do lado da Rua 1, a Porta 02 do lado da Rua 4. Ambas alinhadas com
-   as posições 21 e 22 (a faixa "extra"). */
-const PORTA_POR_RUA = { 1: 'Entrada', 4: 'Saída' };
+let CAMARA_ATIVA = 1; // qual câmara está sendo vista agora — muda o endereçamento inteiro
+function cfgCamara(){ return CAMARAS[CAMARA_ATIVA]; }
 
-/* As 2 posições extras (21 e 22) só existem fisicamente como espaço de
-   armazenagem nos andares 3 e 4 — nos andares 1 e 2 esse trecho não é
-   posição utilizável (por isso entra "bloqueado" no desenho), embora a
-   estrutura (e por consequência o alinhamento da porta) seja a mesma em
-   todos os andares. */
+const ANDARES = [1,2,3,4]; // igual nas 3 câmaras
+
+/* Atalho que os outros trechos do código já usavam bastante — mantido
+   como função (em vez de virar `cfgCamara().andarTemExtra(andar)` em
+   cada lugar) só pra não precisar reescrever todo mundo que já chamava
+   `andarTemExtra(andar)` direto. */
 function andarTemExtra(andar){
-  return andar === 3 || andar === 4;
+  return cfgCamara().andarTemExtra(andar);
 }
 
 let andarAtual = 4; // andar mais alto como padrão; null = "CÂMARA" (todos os andares somados)
@@ -966,7 +1001,7 @@ function normalizeOcupacaoRow(row){
   if(faltando.length){
     return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
   }
-  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, caminhao, ocupado: !dataSaida, linha: row.id } };
+  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, caminhao, camara: row.camara, ocupado: !dataSaida, linha: row.id } };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -981,7 +1016,7 @@ async function carregarDados(){
   if(statusEl) statusEl.textContent = 'Atualizando…';
   try{
     const [ocupResp, famResp, prodResp] = await Promise.all([
-      sb.from('ocupacao').select('*'),
+      sb.from('ocupacao').select('*').eq('camara', CAMARA_ATIVA),
       sb.from('familias').select('*'),
       sb.from('produtos').select('*'),
     ]);
@@ -1060,21 +1095,23 @@ async function carregarDados(){
    Cada posição comporta 2 paletes lado a lado (P1 e P2) — por isso cada célula
    é mais larga e é dividida ao meio na horizontal na hora de desenhar. */
 function buildRackCells(){
+  const c = cfgCamara();
   const cellW = 26, cellH = 30, gap = 2, groupGap = 11;
+  const temExtra = c.extraCount > 0;
   const cells = [];
   let x = 0;
-  for(let i=0; i<POS_POR_LADO; i++){
-    const isExtraStart = i === EXTRA_START;
-    const isExtraEnd = i === EXTRA_START + EXTRA_COUNT;
+  for(let i=0; i<c.posPorLado; i++){
+    const isExtraStart = temExtra && i === c.extraStart;
+    const isExtraEnd = temExtra && i === c.extraStart + c.extraCount;
     if(isExtraStart || isExtraEnd) x += groupGap - gap;
-    const isExtra = i >= EXTRA_START && i < EXTRA_START + EXTRA_COUNT;
+    const isExtra = temExtra && i >= c.extraStart && i < c.extraStart + c.extraCount;
     cells.push({ x, w: cellW, h: cellH, numero: i+1, isExtra });
     x += cellW + gap;
   }
   return { cells, totalWidth: x - gap };
 }
 
-const RACK = buildRackCells();
+let RACK = buildRackCells(); // recalculado toda vez que a câmara ativa muda (ver trocarCamara)
 
 function cellCode(rua, lado, andar, numero, palete){
   const base = `R${rua}-${lado}-A${andar}-${String(numero).padStart(2,'0')}`;
@@ -1168,9 +1205,16 @@ function renderRackSvg(rua, lado, andar){
                      do Lado A) — usada na Rua 1.
    side='bottom' -> parede fica ABAIXO do rack — usada na Rua 4. */
 function doorWallHtml(portaLabel, side){
-  const first = RACK.cells[EXTRA_START];
-  const last = RACK.cells[EXTRA_START + EXTRA_COUNT - 1];
-  const centerX = (first.x + last.x + last.w) / 2;
+  const c = cfgCamara();
+  let centerX;
+  if(c.extraCount > 0){
+    const first = RACK.cells[c.extraStart];
+    const last = RACK.cells[c.extraStart + c.extraCount - 1];
+    centerX = (first.x + last.x + last.w) / 2;
+  } else {
+    // sem faixa extra (Câmaras 2 e 3) — porta fica centralizada no rack inteiro
+    centerX = RACK.totalWidth / 2;
+  }
   const doorW = 40, wallColor = '#5C5049', h = 66;
   const isTop = side === 'top';
   const wallY = isTop ? h - 12 : 12;
@@ -1189,12 +1233,13 @@ function doorWallHtml(portaLabel, side){
 }
 
 function renderRua(rua, andar){
+  const c = cfgCamara();
   const isDouble = rua.lados.length === 2;
   const extraAtivo = andarTemExtra(andar);
-  const posPorLadoNesteAndar = extraAtivo ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
+  const posPorLadoNesteAndar = extraAtivo ? c.posPorLado : (c.posPorLado - c.extraCount);
   const capacidade = rua.lados.length * posPorLadoNesteAndar;
-  const portaLabel = PORTA_POR_RUA[rua.numero];
-  const portaSide = PORTA_SIDE[rua.numero];
+  const portaLabel = c.portaPorRua[rua.numero];
+  const portaSide = c.portaSide[rua.numero];
   const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide) : '';
 
   let body = '';
@@ -1219,10 +1264,17 @@ function renderRua(rua, andar){
   }
 
   const paletesNesteAndar = rua.lados.length * paletesTotaisNoAndar(andar);
+  let detalhePosicoes;
+  if(c.extraCount > 0){
+    const antes = c.extraStart, depois = c.posPorLado - c.extraStart - c.extraCount;
+    detalhePosicoes = `${antes} ${extraAtivo ? `+ ${c.extraCount} (extra) ` : ''}+ ${depois}${isDouble ? ' por lado' : ''}${!extraAtivo ? ` · sem as ${c.extraCount} extras neste andar` : ''}`;
+  } else {
+    detalhePosicoes = `${c.posPorLado} posiç${c.posPorLado === 1 ? 'ão' : 'ões'}${isDouble ? ' por lado' : ''}`;
+  }
   return `
     <div class="rua-panel">
       <div class="rua-head">
-        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · 20 ${extraAtivo ? '+ 2 (extra) ' : ''}+ 20 ${isDouble ? 'por lado' : ''}${!extraAtivo ? ' · sem as 2 extras neste andar' : ''}</span>
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · ${detalhePosicoes}</span>
       </div>
       ${body}
     </div>
@@ -1230,8 +1282,9 @@ function renderRua(rua, andar){
 }
 
 function posicoesPorAndar(andar){
-  const posPorLado = andarTemExtra(andar) ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
-  return RUAS.reduce((sum,r)=> sum + r.lados.length*posPorLado, 0);
+  const c = cfgCamara();
+  const posPorLado = andarTemExtra(andar) ? c.posPorLado : (c.posPorLado - c.extraCount);
+  return c.ruas.reduce((sum,r)=> sum + r.lados.length*posPorLado, 0);
 }
 
 /* Conta quantos paletes (P1+P2) estão ocupados numa rua/lado/andar específicos */
@@ -1246,11 +1299,11 @@ function paletesOcupados(rua, lado, andar){
   return count;
 }
 
-/* Quantos paletes cabem numa posição: 2 (P1+P2) pra quase todas, exceto a
-   Posição 01 de cada andar/frente, que só comporta 1 palete (P1) — regra
-   física da câmara, confirmada pela operação. */
+/* Quantos paletes cabem numa posição — varia por câmara: na Câmara 1, a
+   Posição 01 de cada andar/frente só comporta 1 palete (P1); nas Câmaras
+   2 e 3 toda posição vale 2, sem exceção. */
 function capacidadePosicao(numero){
-  return numero === 1 ? 1 : PALETES_POR_POSICAO;
+  return cfgCamara().paletesDaPosicao(numero);
 }
 
 function paletesTotaisNoAndar(andar){
@@ -1430,17 +1483,17 @@ function renderFamilyLegend(){
    realmente usa pra saber "quanto ainda cabe". */
 function calcularOcupacaoCamara(){
   let ocupados = 0, capacidade = 0;
-  RUAS.forEach(rua => rua.lados.forEach(lado => {
+  cfgCamara().ruas.forEach(rua => rua.lados.forEach(lado => {
     andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua.numero, lado, andar);
       capacidade += paletesTotaisNoAndar(andar);
     });
   }));
-  const label = andarAtual === null ? 'Câmara fria — total geral' : `Câmara fria — Andar ${andarAtual}`;
+  const label = andarAtual === null ? `${cfgCamara().nome} — total geral` : `${cfgCamara().nome} — Andar ${andarAtual}`;
   return [{ label, ocupados, capacidade }];
 }
 function calcularOcupacaoPorRua(){
-  return RUAS.flatMap(rua => rua.lados.map(lado => {
+  return cfgCamara().ruas.flatMap(rua => rua.lados.map(lado => {
     let ocupados = 0, capacidade = 0;
     andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua.numero, lado, andar);
@@ -1453,8 +1506,8 @@ function calcularOcupacaoPorRua(){
 function calcularOcupacaoPorAndar(){
   return andaresConsiderados().map(andar => {
     let ocupados = 0;
-    RUAS.forEach(rua => rua.lados.forEach(lado => { ocupados += paletesOcupados(rua.numero, lado, andar); }));
-    const capacidade = RUAS.reduce((sum, rua) => sum + rua.lados.length * paletesTotaisNoAndar(andar), 0);
+    cfgCamara().ruas.forEach(rua => rua.lados.forEach(lado => { ocupados += paletesOcupados(rua.numero, lado, andar); }));
+    const capacidade = cfgCamara().ruas.reduce((sum, rua) => sum + rua.lados.length * paletesTotaisNoAndar(andar), 0);
     return { label: `Andar ${andar}`, ocupados, capacidade };
   });
 }
@@ -2676,7 +2729,7 @@ function sugerirVagasParaEntrada(familia, quantidade){
       // físico em algum lugar da câmara
       if(!alvo){
         const todas = [];
-        RUAS.forEach(rua => rua.lados.forEach(lado => todas.push(statusRuaLado(rua.numero, lado))));
+        cfgCamara().ruas.forEach(rua => rua.lados.forEach(lado => todas.push(statusRuaLado(rua.numero, lado))));
         const comVaga = todas.filter(s => s.andarAlvo !== null);
         const virgem = comVaga.find(s => !s.temAlgumaFamilia);
         alvo = virgem || comVaga.sort((a, b) => b.livresTotal - a.livresTotal)[0] || null;
@@ -2990,7 +3043,7 @@ async function confirmarEntradaMisto(){
     const agoraIso = new Date().toISOString();
     const linhasNovas = ITENS_PALETE_MISTO.map(item => ({
       codigo_rastreio: codigo,
-      familia: item.familia, produto: item.produto, pacotes: item.pacotes,
+      familia: item.familia, produto: item.produto, pacotes: item.pacotes, camara: CAMARA_ATIVA,
       rua: VAGA_MISTO.rua, lado: VAGA_MISTO.lado, andar: VAGA_MISTO.andar, posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
       data_producao: item.dataProducao, // já vem "aaaa-mm-dd" do input
       data_entrada: agoraIso,
@@ -3165,7 +3218,7 @@ async function confirmarEntrada(){
     const agoraIso = new Date().toISOString();
     const linhasNovas = ENTRADA_VAGAS.map(v => ({
       codigo_rastreio: gerarCodigoUnico(usados), // cada vaga é um palete físico diferente — código próprio pra cada uma
-      familia, produto: ENTRADA_PRODUTO, pacotes,
+      familia, produto: ENTRADA_PRODUTO, pacotes, camara: CAMARA_ATIVA,
       rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
       data_producao: dataProducaoIso, data_entrada: agoraIso,
     }));
@@ -3318,6 +3371,46 @@ function trocarView(view){
   if(view === 'entrada') renderListaProdutosEntrada();
 }
 
+/* Troca a câmara ativa: recalcula o rack (a estrutura física muda entre
+   câmaras), limpa qualquer carga/entrada em andamento (os ids/endereços
+   dela pertencem à câmara anterior, não fazem mais sentido depois da
+   troca) e busca os dados da câmara nova do zero. */
+function trocarCamara(nova){
+  if(nova === CAMARA_ATIVA) return;
+  const temCargaEmAndamento = CARGA_ITENS.length > 0 || CARGA_ITENS_LINHA.length > 0;
+  const temEntradaEmAndamento = ENTRADA_VAGAS.length > 0 || ITENS_PALETE_MISTO.length > 0;
+  if(temCargaEmAndamento || temEntradaEmAndamento){
+    if(!confirm('Você tem uma carga ou entrada em andamento que ainda não foi confirmada. Trocar de câmara agora vai descartar isso — quer continuar?')) return;
+  }
+
+  CAMARA_ATIVA = nova;
+  RACK = buildRackCells();
+
+  // limpa estado que só fazia sentido na câmara anterior
+  GRAFICO_FAMILIA_ATUAL = null;
+  FILTRO_PRODUTO = '';
+  FILTRO_FAMILIA_MAPA = null;
+  CARGA_ITENS = [];
+  CARGA_ITENS_LINHA = [];
+  BUSCA_CODIGO_RESULTADO = null;
+  ENTRADA_PRODUTO = null;
+  ENTRADA_VAGAS = [];
+  ITENS_PALETE_MISTO = [];
+  VAGA_MISTO = null;
+
+  renderCamaraSwitch();
+  carregarDados();
+}
+
+function renderCamaraSwitch(){
+  const el = document.getElementById('camaraSwitch');
+  if(!el) return;
+  el.innerHTML = [1, 2, 3].map(n => `<button class="camara-btn${n === CAMARA_ATIVA ? ' active' : ''}" data-camara="${n}">${CAMARAS[n].nome}</button>`).join('');
+  el.querySelectorAll('.camara-btn').forEach(btn=>{
+    btn.addEventListener('click', () => trocarCamara(Number(btn.getAttribute('data-camara'))));
+  });
+}
+
 function renderFloorPanel(){
   const panel = document.getElementById('floorPanel');
   panel.querySelectorAll('.floor-btn').forEach(b=>b.remove());
@@ -3379,7 +3472,7 @@ function renderAll(){
         <span class="nav-andar-atual">Mapa — Andar ${andarMapaCamara}</span>
         <button id="btnAndarMapaProximo" class="btn-nav-andar" ${temProximo ? '' : 'disabled'}>Próximo andar ▶</button>
       </div>
-      ${RUAS.map(rua => renderRua(rua, andarMapaCamara)).join('')}
+      ${cfgCamara().ruas.map(rua => renderRua(rua, andarMapaCamara)).join('')}
     `;
     const btnAnterior = document.getElementById('btnAndarMapaAnterior');
     const btnProximo = document.getElementById('btnAndarMapaProximo');
@@ -3392,7 +3485,7 @@ function renderAll(){
       if(i < ANDARES.length - 1){ andarMapaCamara = ANDARES[i + 1]; renderAll(); }
     });
   } else {
-    document.getElementById('ruasWrap').innerHTML = RUAS.map(rua => renderRua(rua, andarAtual)).join('');
+    document.getElementById('ruasWrap').innerHTML = cfgCamara().ruas.map(rua => renderRua(rua, andarAtual)).join('');
   }
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
@@ -3474,6 +3567,7 @@ inicializarAbaCarga();
 inicializarAbaEntrada();
 
 renderFloorPanel();
+renderCamaraSwitch();
 renderAll();
 carregarDados();
 // Atualiza sozinho a cada 2 minutos, pra equipe não precisar clicar toda hora
