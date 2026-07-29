@@ -61,6 +61,14 @@
   .brand-block .eyebrow{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:3px; text-transform:uppercase; color:var(--brand); font-weight:600; margin-bottom:6px; }
   .brand-block h1{ margin:0; font-family:var(--font-display); font-size:29px; font-weight:600; letter-spacing:0.3px; text-transform:uppercase; }
   .brand-block .subtitle{ font-size:13px; color:var(--text-soft); margin-top:5px; font-style:normal; }
+  .camara-switch{ display:flex; gap:8px; }
+  .camara-switch-btn{
+    font-family:var(--font-mono); font-size:12px; font-weight:700; letter-spacing:0.5px;
+    padding:9px 16px; border-radius:8px; border:1px solid var(--frost-dim);
+    background:var(--bg-soft); color:var(--text-soft); cursor:pointer; transition:all .15s;
+  }
+  .camara-switch-btn:hover{ color:var(--text); border-color:var(--brand); }
+  .camara-switch-btn.active{ background:var(--brand); border-color:var(--brand); color:#fff; }
 
   .container{ max-width:1400px; margin:0 auto; padding:26px 28px 60px; }
 
@@ -509,6 +517,11 @@
           <h1>Planta da Câmara Fria</h1>
           <div class="subtitle">Mapa de endereçamento por rua e andar</div>
         </div>
+        <div class="camara-switch" id="camaraSwitch">
+          <button class="camara-switch-btn active" data-camara="1">Câmara 1</button>
+          <button class="camara-switch-btn" data-camara="2">Câmara 2</button>
+          <button class="camara-switch-btn" data-camara="3">Câmara 3</button>
+        </div>
       </div>
     </div>
 
@@ -748,13 +761,13 @@
    precisa mais de colunas separadas pra isso. Essa é a MESMA lógica do
    Manifesto Técnico da Câmara Fria 1 (validado por levantamento físico).
    ====================================================================== */
-function gerarMapaCamara1(){
+function gerarMapaCamara(qtdEsquerda, qtdDireita){
   const mapa = {};
   let n = 0;
   function montaLongarina(rua, longarina, ordemAndares){
     ordemAndares.forEach(andar => {
       const temExtra = (andar === 3 || andar === 4);
-      for(let i=1; i<=10; i++){
+      for(let i=1; i<=qtdEsquerda; i++){
         n++;
         mapa[n] = { posicao:n, rua, longarina, andar, segmento:'esquerda', posLocal:i, capacidade: i===1 ? 1 : 2 };
       }
@@ -764,7 +777,7 @@ function gerarMapaCamara1(){
           mapa[n] = { posicao:n, rua, longarina, andar, segmento:'corredor', posLocal:e, capacidade:2, extra:`E${e}` };
         });
       }
-      for(let i=1; i<=9; i++){
+      for(let i=1; i<=qtdDireita; i++){
         n++;
         mapa[n] = { posicao:n, rua, longarina, andar, segmento:'direita', posLocal:i, capacidade: i===1 ? 1 : 2 };
       }
@@ -777,10 +790,21 @@ function gerarMapaCamara1(){
   });
   return mapa;
 }
-const CAMARA1_MAPA = gerarMapaCamara1();              // posição (1-560) -> {rua, longarina, andar, segmento, posLocal, capacidade}
-const CAMARA1_TOTAL_POSICOES = Object.keys(CAMARA1_MAPA).length; // 560
 
-function infoPosicao(numero){ return CAMARA1_MAPA[numero] || null; }
+/* Câmara 1: segmento esquerdo com 10 posições, direito com 9 (validado
+   por levantamento físico — ver Manifesto Técnico).
+   Câmaras 2 e 3: mesma estrutura (4 ruas, 4 andares, extras E1/E2 nos
+   andares 3 e 4, 1ª posição de cada segmento com 1 palete só), mas
+   segmento esquerdo com 3 posições e direito com 5. */
+const CAMARA1_MAPA = gerarMapaCamara(10, 9);
+const CAMARA2_MAPA = gerarMapaCamara(3, 5);
+const CAMARA3_MAPA = gerarMapaCamara(3, 5);
+const MAPAS_POR_CAMARA = { 1: CAMARA1_MAPA, 2: CAMARA2_MAPA, 3: CAMARA3_MAPA };
+
+let CAMARA_ATUAL = 1; // 1, 2 ou 3 — qual câmara está sendo exibida/editada agora
+
+function mapaAtual(){ return MAPAS_POR_CAMARA[CAMARA_ATUAL]; }
+function infoPosicao(numero){ return mapaAtual()[numero] || null; }
 function capacidadeDaPosicao(numero){ const info = infoPosicao(numero); return info ? info.capacidade : 2; }
 
 /* Endereço em texto (pra mensagens, listas de carga, etiquetas) — deriva
@@ -789,21 +813,21 @@ function capacidadeDaPosicao(numero){ const info = infoPosicao(numero); return i
 function enderecoTexto(posicao, palete){
   const info = infoPosicao(posicao);
   const paleteTxt = palete ? `-P${palete}` : '';
-  if(!info) return `Posição ${posicao}${paleteTxt}`;
+  if(!info) return `Câmara ${CAMARA_ATUAL} · Posição ${posicao}${paleteTxt}`;
   const longarinaTxt = info.longarina === 'única' ? '' : ` Longarina ${info.longarina}`;
-  return `Rua ${info.rua}${longarinaTxt} · And.${info.andar} · Pos.${posicao}${paleteTxt}`;
+  return `Câmara ${CAMARA_ATUAL} · Rua ${info.rua}${longarinaTxt} · And.${info.andar} · Pos.${posicao}${paleteTxt}`;
 }
 
 /* Lista as ruas e as longarinas de cada uma, na ordem certa de exibição —
    derivado direto do mapa, não é mais uma constante separada. */
 function ruasExistentes(){
   const set = new Set();
-  Object.values(CAMARA1_MAPA).forEach(p => set.add(p.rua));
+  Object.values(mapaAtual()).forEach(p => set.add(p.rua));
   return [...set].sort((a,b)=>a-b);
 }
 function longarinasDaRua(rua){
   const set = new Set();
-  Object.values(CAMARA1_MAPA).forEach(p => { if(p.rua === rua) set.add(p.longarina); });
+  Object.values(mapaAtual()).forEach(p => { if(p.rua === rua) set.add(p.longarina); });
   return [...set].sort();
 }
 const ANDARES = [1,2,3,4];
@@ -812,7 +836,7 @@ const ANDARES = [1,2,3,4];
    (rua+longarina+andar), já na ordem física de leitura (esquerda →
    corredor → direita) — é isso que desenha uma linha do mapa. */
 function posicoesDaFileira(rua, longarina, andar){
-  return Object.values(CAMARA1_MAPA)
+  return Object.values(mapaAtual())
     .filter(p => p.rua === rua && p.longarina === longarina && p.andar === andar)
     .sort((a,b) => a.posicao - b.posicao);
 }
@@ -1015,7 +1039,7 @@ async function carregarDados(){
   if(statusEl) statusEl.textContent = 'Atualizando…';
   try{
     const [ocupResp, famResp, prodResp] = await Promise.all([
-      sb.from('ocupacao').select('*'),
+      sb.from('ocupacao').select('*').eq('camara', CAMARA_ATUAL),
       sb.from('familias').select('*'),
       sb.from('produtos').select('*'),
     ]);
@@ -1094,11 +1118,11 @@ async function carregarDados(){
    fileira — o layout visual (onde cada bloco fica) é igual em toda
    fileira que tem extra, e igual em toda fileira que não tem, então só
    precisamos de 2 variantes (não uma por rua/andar). */
-function buildRackCells(temExtra){
+function buildRackCells(temExtra, qtdEsquerda, qtdDireita){
   const cellW = 26, cellH = 30, gap = 2, groupGap = 11;
   const cells = [];
   let x = 0;
-  for(let i=1; i<=10; i++){
+  for(let i=1; i<=qtdEsquerda; i++){
     cells.push({ x, w: cellW, h: cellH, posLocal: i, segmento: 'esquerda' });
     x += cellW + gap;
   }
@@ -1112,18 +1136,26 @@ function buildRackCells(temExtra){
   } else {
     x += 2*cellW + gap + (groupGap - gap); // vão vazio do mesmo tamanho de 2 posições
   }
-  for(let i=1; i<=9; i++){
+  for(let i=1; i<=qtdDireita; i++){
     cells.push({ x, w: cellW, h: cellH, posLocal: i, segmento: 'direita' });
     x += cellW + gap;
   }
   return { cells, totalWidth: x - gap };
 }
-const RACK_COM_EXTRA = buildRackCells(true);
-const RACK_SEM_EXTRA = buildRackCells(false);
-function rackDoAndar(andar){ return (andar === 3 || andar === 4) ? RACK_COM_EXTRA : RACK_SEM_EXTRA; }
+/* Câmara 1: 10 + 9. Câmaras 2 e 3: 3 + 5 (mesma estrutura, segmentos
+   menores). Cada câmara guarda seu próprio par de racks (com/sem extra). */
+const RACKS_POR_CAMARA = {
+  1: { comExtra: buildRackCells(true, 10, 9), semExtra: buildRackCells(false, 10, 9) },
+  2: { comExtra: buildRackCells(true, 3, 5), semExtra: buildRackCells(false, 3, 5) },
+  3: { comExtra: buildRackCells(true, 3, 5), semExtra: buildRackCells(false, 3, 5) },
+};
+function rackDoAndar(andar){
+  const racks = RACKS_POR_CAMARA[CAMARA_ATUAL];
+  return (andar === 3 || andar === 4) ? racks.comExtra : racks.semExtra;
+}
 
 /* Endereço em texto agora é só "posição + palete" — a posição sequencial
-   já carrega rua/longarina/andar/segmento sozinha (ver CAMARA1_MAPA). */
+   já carrega rua/longarina/andar/segmento sozinha (ver mapaAtual()). */
 function cellCode(posicao, palete){
   return palete ? `P${posicao}-${palete}` : `P${posicao}`;
 }
@@ -1435,7 +1467,7 @@ function statusRuaLado(rua, longarina){
   }
   let livresTotal = 0;
   ANDARES.forEach(andar => livresTotal += paletesTotaisNoAndar(andar) - paletesOcupados(rua, longarina, andar));
-  const posicoesDestaLongarina = new Set(Object.values(CAMARA1_MAPA).filter(p => p.rua === rua && p.longarina === longarina).map(p => p.posicao));
+  const posicoesDestaLongarina = new Set(Object.values(mapaAtual()).filter(p => p.rua === rua && p.longarina === longarina).map(p => p.posicao));
   const temAlgumaFamilia = OCUPACAO_REGISTROS.some(r => r.ocupado && posicoesDestaLongarina.has(r.posicao));
   return {
     rua, lado: longarina, andarAlvo, livresTotal, temAlgumaFamilia,
@@ -2326,7 +2358,7 @@ function renderizarPdfRomaneio(estrutura, caminhao){
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(20, 20, 20);
-  doc.text('Romaneio de Carga - Camara Fria', margemX, y);
+  doc.text(`Romaneio de Carga - Camara Fria ${CAMARA_ATUAL}`, margemX, y);
 
   y += 6;
   doc.setFont('helvetica', 'normal');
@@ -3039,6 +3071,7 @@ async function confirmarEntradaMisto(){
       posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
       data_producao: item.dataProducao, // já vem "aaaa-mm-dd" do input
       data_entrada: agoraIso,
+      camara: CAMARA_ATUAL,
     }));
 
     const { error } = await sb.from('ocupacao').insert(linhasNovas);
@@ -3210,6 +3243,7 @@ async function confirmarEntrada(){
       familia, produto: ENTRADA_PRODUTO, pacotes,
       posicao: v.posicao, palete: v.palete,
       data_producao: dataProducaoIso, data_entrada: agoraIso,
+      camara: CAMARA_ATUAL,
     }));
 
     const { error } = await sb.from('ocupacao').insert(linhasNovas);
@@ -3492,6 +3526,29 @@ document.getElementById('btnAtualizar').addEventListener('click', ()=>{
   const btn = document.getElementById('btnAtualizar');
   btn.disabled = true;
   carregarDados().finally(()=>{ btn.disabled = false; });
+});
+
+/* Troca de câmara (1/2/3) — cada uma tem seu próprio mapa físico e seus
+   próprios registros no banco (coluna "camara" na tabela ocupacao).
+   Troca o mapa/rack ativo, limpa filtros e estado específico de tela, e
+   recarrega os dados só daquela câmara. */
+document.getElementById('camaraSwitch').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.camara-switch-btn');
+  if(!btn) return;
+  const nova = Number(btn.dataset.camara);
+  if(nova === CAMARA_ATUAL) return;
+  CAMARA_ATUAL = nova;
+  document.querySelectorAll('.camara-switch-btn').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.camara) === CAMARA_ATUAL);
+  });
+  andarAtual = ANDARES[ANDARES.length - 1];
+  andarMapaCamara = ANDARES[ANDARES.length - 1];
+  FILTRO_PRODUTO = '';
+  document.getElementById('buscaProduto').value = '';
+  document.getElementById('btnLimparBusca').style.display = 'none';
+  FILTRO_FAMILIA_MAPA = null;
+  renderFloorPanel();
+  carregarDados();
 });
 
 const buscaInput = document.getElementById('buscaProduto');
