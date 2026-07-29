@@ -3410,7 +3410,7 @@ function renderAll(){
         <span class="nav-andar-atual">Mapa — Andar ${andarMapaCamara}</span>
         <button id="btnAndarMapaProximo" class="btn-nav-andar" ${temProximo ? '' : 'disabled'}>Próximo andar ▶</button>
       </div>
-      ${ruasExistentes().map(rua => renderRua(rua, andarMapaCamara)).join('')}
+      ${ruasExistentes().slice().reverse().map(rua => renderRua(rua, andarMapaCamara)).join('')}
     `;
     const btnAnterior = document.getElementById('btnAndarMapaAnterior');
     const btnProximo = document.getElementById('btnAndarMapaProximo');
@@ -3423,7 +3423,7 @@ function renderAll(){
       if(i < ANDARES.length - 1){ andarMapaCamara = ANDARES[i + 1]; renderAll(); }
     });
   } else {
-    document.getElementById('ruasWrap').innerHTML = ruasExistentes().map(rua => renderRua(rua, andarAtual)).join('');
+    document.getElementById('ruasWrap').innerHTML = ruasExistentes().slice().reverse().map(rua => renderRua(rua, andarAtual)).join('');
   }
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
