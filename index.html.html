@@ -770,11 +770,11 @@ function gerarMapaCamara1(){
       }
     });
   }
-  [1,2,3].forEach(rua=>{
+  montaLongarina(1, 'única', [4,3,2,1]);
+  [2,3,4].forEach(rua=>{
     montaLongarina(rua, 'A', [4,3,2,1]);
     montaLongarina(rua, 'B', [1,2,3,4]);
   });
-  montaLongarina(4, 'única', [4,3,2,1]);
   return mapa;
 }
 const CAMARA1_MAPA = gerarMapaCamara1();              // posição (1-560) -> {rua, longarina, andar, segmento, posLocal, capacidade}
