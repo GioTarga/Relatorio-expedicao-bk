@@ -1238,7 +1238,11 @@ function renderRua(ruaNumero, andar){
   const capacidade = longarinas.length * rack.cells.length;
   const temExtra = (andar === 3 || andar === 4);
   const portaLabel = ruaNumero === 1 ? 'Entrada' : (ruaNumero === 4 ? 'Saída' : null);
-  const portaSide = ruaNumero === 1 ? 'top' : (ruaNumero === 4 ? 'bottom' : null);
+  // A ordem visual das ruas foi invertida (Rua 4 no topo da página, Rua 1
+  // no fim) — então a Entrada (Rua 1) agora fica embaixo do seu painel, e
+  // a Saída (Rua 4) fica em cima do painel dela, pra continuarem nas
+  // pontas opostas da página.
+  const portaSide = ruaNumero === 1 ? 'bottom' : (ruaNumero === 4 ? 'top' : null);
   const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide, andar) : '';
 
   let body = '';
