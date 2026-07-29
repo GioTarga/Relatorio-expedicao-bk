@@ -1118,8 +1118,8 @@ async function carregarDados(){
    fileira — o layout visual (onde cada bloco fica) é igual em toda
    fileira que tem extra, e igual em toda fileira que não tem, então só
    precisamos de 2 variantes (não uma por rua/andar). */
-function buildRackCells(temExtra, qtdEsquerda, qtdDireita){
-  const cellW = 26, cellH = 30, gap = 2, groupGap = 11;
+function buildRackCells(temExtra, qtdEsquerda, qtdDireita, cellW = 26, cellH = 30){
+  const gap = 2, groupGap = 11;
   const cells = [];
   let x = 0;
   for(let i=1; i<=qtdEsquerda; i++){
@@ -1142,12 +1142,18 @@ function buildRackCells(temExtra, qtdEsquerda, qtdDireita){
   }
   return { cells, totalWidth: x - gap };
 }
-/* Câmara 1: 10 + 9. Câmaras 2 e 3: 3 + 5 (mesma estrutura, segmentos
-   menores). Cada câmara guarda seu próprio par de racks (com/sem extra). */
+/* Câmara 1: 10 + 9 (21 posições por fileira) → célula de 26px já enche
+   bem a largura da tela quando esticada pra 100%.
+   Câmaras 2 e 3: só 3 + 5 (10 posições por fileira) — com a mesma
+   célula de 26px, o SVG tinha que esticar mais que o dobro pra preencher
+   a mesma largura, e isso distorcia (esticava) os números e o texto de
+   Entrada/Saída. Usando uma célula bem mais larga (57px), a largura
+   "natural" da fileira já fica próxima da largura da Câmara 1, então o
+   esticamento final é parecido nas duas e o texto sai legível. */
 const RACKS_POR_CAMARA = {
   1: { comExtra: buildRackCells(true, 10, 9), semExtra: buildRackCells(false, 10, 9) },
-  2: { comExtra: buildRackCells(true, 3, 5), semExtra: buildRackCells(false, 3, 5) },
-  3: { comExtra: buildRackCells(true, 3, 5), semExtra: buildRackCells(false, 3, 5) },
+  2: { comExtra: buildRackCells(true, 3, 5, 57, 30), semExtra: buildRackCells(false, 3, 5, 57, 30) },
+  3: { comExtra: buildRackCells(true, 3, 5, 57, 30), semExtra: buildRackCells(false, 3, 5, 57, 30) },
 };
 function rackDoAndar(andar){
   const racks = RACKS_POR_CAMARA[CAMARA_ATUAL];
@@ -1305,11 +1311,13 @@ function renderRua(ruaNumero, andar){
     `;
   }
 
+  const qtdEsquerda = rack.cells.filter(c => c.segmento === 'esquerda').length;
+  const qtdDireita = rack.cells.filter(c => c.segmento === 'direita').length;
   const paletesNesteAndar = longarinas.length * paletesTotaisNoAndar(andar);
   return `
     <div class="rua-panel">
       <div class="rua-head">
-        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 longarinas' : '1 longarina'} · 10 + ${temExtra ? 'E1/E2 + ' : ''}9${isDouble ? ' por longarina' : ''}${!temExtra ? ' · corredor vazio neste andar' : ''}</span>
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 longarinas' : '1 longarina'} · ${qtdEsquerda} + ${temExtra ? 'E1/E2 + ' : ''}${qtdDireita}${isDouble ? ' por longarina' : ''}${!temExtra ? ' · corredor vazio neste andar' : ''}</span>
       </div>
       ${body}
     </div>
