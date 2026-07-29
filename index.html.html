@@ -1135,7 +1135,10 @@ function renderRackSvg(rua, longarina, andar){
   const rack = rackDoAndar(andar);
   const posicoes = posicoesDaFileira(rua, longarina, andar); // mesma ordem dos cells
   const h = rack.cells[0].h;
+  const hLabel = 12; // espaço reservado embaixo pro número da posição
+  const hTotal = h + hLabel;
   let rects = '';
+  let labels = '';
   rack.cells.forEach((c, idx)=>{
     const p = posicoes[idx];
     if(!p) return;
@@ -1166,6 +1169,8 @@ function renderRackSvg(rua, longarina, andar){
     const opP1 = buscaAtiva ? (matchP1 ? '1' : '0.12') : '1';
     const opP2 = buscaAtiva ? (matchP2 ? '0.72' : '0.12') : '0.72';
 
+    labels += `<text x="${c.x + c.w/2}" y="${h + 9}" font-size="7" fill="var(--text-soft)" text-anchor="middle" font-family="var(--font-mono)">${numero}</text>`;
+
     // 1ª posição de cada segmento só comporta 1 palete — desenha uma vaga
     // única, não duas. Exceção: se já existir um registro de P2 aqui
     // (dado incorreto), mantém o desenho normal, pra sinalizar o problema
@@ -1188,7 +1193,7 @@ function renderRackSvg(rua, longarina, andar){
                 fill="${fillP2}" stroke="${strokeP2}" stroke-width="${swP2}" opacity="${opP2}"
                 class="rack-cell${conflitoP2 ? ' conflito-pulse' : ''}" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
   });
-  return `<svg width="${rack.totalWidth}" height="${h}" style="display:block;">${rects}</svg>`;
+  return `<svg width="100%" height="${hTotal}" viewBox="0 0 ${rack.totalWidth} ${hTotal}" preserveAspectRatio="none" style="display:block;">${rects}${labels}</svg>`;
 }
 
 /* Porta desenhada no mesmo estilo da planta baixa: um trecho de parede com
@@ -1216,7 +1221,7 @@ function doorWallHtml(portaLabel, side, andar){
   const sweep = isTop ? 0 : 1;
   const labelY = isTop ? leafEndY - 10 : leafEndY + 18;
   return `
-    <svg width="${rack.totalWidth}" height="${h}" style="display:block;overflow:visible;">
+    <svg width="100%" height="${h}" viewBox="0 0 ${rack.totalWidth} ${h}" preserveAspectRatio="none" style="display:block;overflow:visible;">
       <line x1="0" y1="${wallY}" x2="${centerX-doorW/2}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
       <line x1="${centerX+doorW/2}" y1="${wallY}" x2="${rack.totalWidth}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
       <line x1="${centerX-doorW/2}" y1="${wallY}" x2="${centerX-doorW/2}" y2="${leafEndY}" stroke="${wallColor}" stroke-width="2"></line>
