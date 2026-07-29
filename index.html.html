@@ -1243,20 +1243,27 @@ function renderRua(ruaNumero, andar){
 
   let body = '';
   if(isDouble){
+    // Física real: na Rua 4, a porta de Saída fica atrás da Longarina A
+    // (não da B) — então nessa rua a ordem de exibição é invertida
+    // (B em cima, A embaixo) pra a porta ficar encostada na A.
+    const primeira = (ruaNumero === 4) ? 'B' : 'A';
+    const segunda = (ruaNumero === 4) ? 'A' : 'B';
     body = `
       ${portaSide === 'top' ? portaHtml : ''}
-      <div class="lado-label">Longarina A</div>
-      <div class="rack-scroll">${renderRackSvg(ruaNumero, 'A', andar)}</div>
+      <div class="lado-label">Longarina ${primeira}</div>
+      <div class="rack-scroll">${renderRackSvg(ruaNumero, primeira, andar)}</div>
       <div class="rua-mid-label">Rua ${ruaNumero}</div>
-      <div class="lado-label">Longarina B</div>
-      <div class="rack-scroll">${renderRackSvg(ruaNumero, 'B', andar)}</div>
+      <div class="lado-label">Longarina ${segunda}</div>
+      <div class="rack-scroll">${renderRackSvg(ruaNumero, segunda, andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
   } else {
+    // Rua 1 tem só uma longarina, e fisicamente ela é a Longarina A
+    // (não existe B na Rua 1).
     body = `
       ${portaSide === 'top' ? portaHtml : ''}
       <div class="rua-mid-label">Rua ${ruaNumero}</div>
-      <div class="lado-label">Longarina única</div>
+      <div class="lado-label">Longarina A</div>
       <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[0], andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
