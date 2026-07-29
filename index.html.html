@@ -611,7 +611,7 @@
         <button id="btnConfirmarCarga" class="btn-sync btn-confirmar">✅ Confirmar carga retirada</button>
       </div>
       <button id="btnReimprimirPdf" class="btn-sync btn-secundario" style="display:none;margin-bottom:14px;">🖨 Reimprimir PDF da última carga confirmada</button>
-      <div class="carga-aviso">⚠ "Confirmar carga retirada" registra a DATA SAÍDA de hoje direto na planilha (via Apps Script) e libera as posições no mapa. Só use depois que os paletes já tiverem saído fisicamente da câmara.</div>
+      <div class="carga-aviso">⚠ "Confirmar carga retirada" registra a DATA SAÍDA de hoje direto no banco e libera as posições no mapa. Só use depois que os paletes já tiverem saído fisicamente da câmara.</div>
     </div>
 
   </div>
@@ -675,7 +675,7 @@
         <button id="btnConfirmarEntrada" class="btn-sync btn-confirmar" style="display:none;margin-top:12px;">✅ Confirmar entrada</button>
       </div>
 
-      <div class="carga-aviso" style="margin-top:16px;">⚠ As posições são sugeridas automaticamente (mesma regra de FIFO do "Onde guardar"). "Confirmar entrada" grava direto na planilha via Apps Script.</div>
+      <div class="carga-aviso" style="margin-top:16px;">⚠ As posições são sugeridas automaticamente (mesma regra de FIFO do "Onde guardar"). "Confirmar entrada" grava direto no banco.</div>
     </div>
 
   </div>
@@ -737,43 +737,84 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <script>
 /* ======================================================================
-   ESTRUTURA DA CÂMARA FRIA
-   - 4 ruas, 4 andares cada
-   - Ruas 1, 2 e 3: dois lados (A e B), cada lado com 20 + 2(extra) + 20 posições
-   - Rua 4: um único lado, também 20 + 2(extra) + 20 posições
+   MAPA DA CÂMARA 1 — endereçamento por posição sequencial
+   Substitui o antigo endereçamento por rua+lado+andar+posição-local.
+   Cada posição (1 a 560) já identifica sozinha onde ela fica fisicamente
+   — rua, longarina, andar, segmento (esquerda/corredor/direita) — não
+   precisa mais de colunas separadas pra isso. Essa é a MESMA lógica do
+   Manifesto Técnico da Câmara Fria 1 (validado por levantamento físico).
    ====================================================================== */
-const RUAS = [
-  { numero: 1, lados: ['A','B'] },
-  { numero: 2, lados: ['A','B'] },
-  { numero: 3, lados: ['A','B'] },
-  { numero: 4, lados: ['U'] }, // único lado
-];
+function gerarMapaCamara1(){
+  const mapa = {};
+  let n = 0;
+  function montaLongarina(rua, longarina, ordemAndares){
+    ordemAndares.forEach(andar => {
+      const temExtra = (andar === 3 || andar === 4);
+      for(let i=1; i<=10; i++){
+        n++;
+        mapa[n] = { posicao:n, rua, longarina, andar, segmento:'esquerda', posLocal:i, capacidade: i===1 ? 1 : 2 };
+      }
+      if(temExtra){
+        [1,2].forEach(e=>{
+          n++;
+          mapa[n] = { posicao:n, rua, longarina, andar, segmento:'corredor', posLocal:e, capacidade:2, extra:`E${e}` };
+        });
+      }
+      for(let i=1; i<=9; i++){
+        n++;
+        mapa[n] = { posicao:n, rua, longarina, andar, segmento:'direita', posLocal:i, capacidade: i===1 ? 1 : 2 };
+      }
+    });
+  }
+  [1,2,3].forEach(rua=>{
+    montaLongarina(rua, 'A', [4,3,2,1]);
+    montaLongarina(rua, 'B', [1,2,3,4]);
+  });
+  montaLongarina(4, 'única', [4,3,2,1]);
+  return mapa;
+}
+const CAMARA1_MAPA = gerarMapaCamara1();              // posição (1-560) -> {rua, longarina, andar, segmento, posLocal, capacidade}
+const CAMARA1_TOTAL_POSICOES = Object.keys(CAMARA1_MAPA).length; // 560
+
+function infoPosicao(numero){ return CAMARA1_MAPA[numero] || null; }
+function capacidadeDaPosicao(numero){ const info = infoPosicao(numero); return info ? info.capacidade : 2; }
+
+/* Endereço em texto (pra mensagens, listas de carga, etiquetas) — deriva
+   tudo a partir da posição sequencial, já que ela sozinha já diz onde
+   fica (rua, longarina, andar). */
+function enderecoTexto(posicao, palete){
+  const info = infoPosicao(posicao);
+  const paleteTxt = palete ? `-P${palete}` : '';
+  if(!info) return `Posição ${posicao}${paleteTxt}`;
+  const longarinaTxt = info.longarina === 'única' ? '' : ` Longarina ${info.longarina}`;
+  return `Rua ${info.rua}${longarinaTxt} · And.${info.andar} · Pos.${posicao}${paleteTxt}`;
+}
+
+/* Lista as ruas e as longarinas de cada uma, na ordem certa de exibição —
+   derivado direto do mapa, não é mais uma constante separada. */
+function ruasExistentes(){
+  const set = new Set();
+  Object.values(CAMARA1_MAPA).forEach(p => set.add(p.rua));
+  return [...set].sort((a,b)=>a-b);
+}
+function longarinasDaRua(rua){
+  const set = new Set();
+  Object.values(CAMARA1_MAPA).forEach(p => { if(p.rua === rua) set.add(p.longarina); });
+  return [...set].sort();
+}
 const ANDARES = [1,2,3,4];
-const POS_POR_LADO = 42; // 20 + 2 + 20
-const EXTRA_START = 20;  // índice 0-based onde começam as 2 posições extras (posições 21 e 22)
-const EXTRA_COUNT = 2;
-/* Lado da parede onde cada porta fica, em relação ao rack daquela rua:
-   'top' = parede/porta ficam ANTES do primeiro lado (atrás do Lado A, no
-   caso da Rua 1); 'bottom' = ficam DEPOIS do último lado (Rua 4). */
-const PORTA_SIDE = { 1: 'top', 4: 'bottom' };
 
-const PALETES_POR_POSICAO = 2; // cada posição comporta 2 paletes, lado a lado
-
-/* Portas da câmara — são apenas 2 no total, uma em cada ponta: a Porta 01
-   fica do lado da Rua 1, a Porta 02 do lado da Rua 4. Ambas alinhadas com
-   as posições 21 e 22 (a faixa "extra"). */
-const PORTA_POR_RUA = { 1: 'Entrada', 4: 'Saída' };
-
-/* As 2 posições extras (21 e 22) só existem fisicamente como espaço de
-   armazenagem nos andares 3 e 4 — nos andares 1 e 2 esse trecho não é
-   posição utilizável (por isso entra "bloqueado" no desenho), embora a
-   estrutura (e por consequência o alinhamento da porta) seja a mesma em
-   todos os andares. */
-function andarTemExtra(andar){
-  return andar === 3 || andar === 4;
+/* Todas as posições (números sequenciais) de uma fileira específica
+   (rua+longarina+andar), já na ordem física de leitura (esquerda →
+   corredor → direita) — é isso que desenha uma linha do mapa. */
+function posicoesDaFileira(rua, longarina, andar){
+  return Object.values(CAMARA1_MAPA)
+    .filter(p => p.rua === rua && p.longarina === longarina && p.andar === andar)
+    .sort((a,b) => a.posicao - b.posicao);
 }
 
 let andarAtual = 4; // andar mais alto como padrão; null = "CÂMARA" (todos os andares somados)
@@ -788,10 +829,14 @@ function andaresConsiderados(){
 /* Registros de ocupação filtrados pelo andar selecionado no painel tipo
    elevador — usado por todos os cálculos de dashboard (ocupação, família,
    aging, estoque) pra que "mudar de andar" realmente mude os números
-   mostrados, não só o desenho do mapa lá embaixo. */
+   mostrados, não só o desenho do mapa lá embaixo. O andar de cada
+   registro agora vem do mapa (a partir da posição), não de uma coluna. */
 function registrosDoAndarSelecionado(){
   if(andarAtual === null) return OCUPACAO_REGISTROS;
-  return OCUPACAO_REGISTROS.filter(r => r.andar === andarAtual);
+  return OCUPACAO_REGISTROS.filter(r => {
+    const info = infoPosicao(r.posicao);
+    return info && info.andar === andarAtual;
+  });
 }
 
 /* Texto curto pra deixar claro, nos títulos dos painéis, se os números
@@ -801,27 +846,17 @@ function rotuloAndarSelecionado(){
 }
 
 /* ======================================================================
-   INTEGRAÇÃO COM GOOGLE SHEETS
-   - Aba "Ocupação": FAMÍLIA, RUA, LADO, ANDAR, POSIÇÃO, PALETE, DATA ENTRADA, DATA SAÍDA
-   - Aba "Famílias": FAMILIA, PRODUTO (catálogo de referência)
+   INTEGRAÇÃO COM SUPABASE
+   Substitui a antiga integração com Google Sheets/Apps Script. As três
+   tabelas (ocupacao, familias, produtos) foram migradas com a mesma
+   estrutura de dados da planilha BD_EXPEDIÇÃO — ver schema.sql/dados.sql.
    ====================================================================== */
-const CSV_OCUPACAO = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=0';
-const CSV_FAMILIAS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=864252146';
-const CSV_PRODUTOS = 'https://docs.google.com/spreadsheets/d/1e2pq-mag8NsODFM_2SUXfOoYF5_zLbdIbw0Ipf6w4wQ/export?format=csv&gid=1988307963'; // catálogo oficial (código + descrição), vindo do CIGAM
+const SUPABASE_URL = 'https://apltxwqotwlnnmhpogcj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NqyWFWQNIdq0bvwHV7roaw_CKeqvK8X';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* ======================================================================
-   CONFIRMAÇÃO AUTOMÁTICA DE CARGA (aba "Montar Carga")
-   Depois de publicar o Apps Script (ver passo a passo combinado com o
-   time), troque os 2 valores abaixo pela URL do Web App publicado e pela
-   mesma senha configurada lá dentro do script. Enquanto APPS_SCRIPT_URL
-   não for trocada, o botão "Confirmar carga" avisa que ainda falta
-   configurar, em vez de tentar chamar uma URL que não existe.
-   ====================================================================== */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwZLHKtQRCq9w_uWC8gkgbybc812hWss-i3L0rP6KKx10Sn4GHbJQjE92BqVAS_GdES/exec'; // termina em /exec
-const APPS_SCRIPT_TOKEN = 'bk-camara-2026-x7';               // mesma senha do Code.gs
-
-let OCUPACAO_REGISTROS = [];   // todas as linhas válidas da aba Ocupação
-let LINHAS_IGNORADAS = [];     // linhas da aba Ocupação descartadas por dado incompleto (linha + motivo)
+let OCUPACAO_REGISTROS = [];   // todos os registros válidos da tabela "ocupacao"
+let LINHAS_IGNORADAS = [];     // registros descartados por dado incompleto (id + motivo)
 let POSICOES_01_INVALIDAS = []; // posições 01 (só cabe 1 palete) que têm um P2 cadastrado por engano
 let OCUPACAO_MAP = {};         // key = código da posição (igual ao cellCode) -> registro ocupado
 let FAMILIAS_CATALOGO = [];    // linhas da aba Famílias
@@ -870,35 +905,25 @@ function produtoCombina(produtos){
   });
 }
 
-/* Parser simples de CSV (respeita campos entre aspas com vírgula dentro) */
-function parseCSV(text){
-  const rows = [];
-  let row = [], field = '', inQuotes = false;
-  for(let i=0; i<text.length; i++){
-    const c = text[i], next = text[i+1];
-    if(inQuotes){
-      if(c === '"' && next === '"'){ field += '"'; i++; }
-      else if(c === '"'){ inQuotes = false; }
-      else field += c;
-    } else {
-      if(c === '"') inQuotes = true;
-      else if(c === ','){ row.push(field); field = ''; }
-      else if(c === '\n' || c === '\r'){
-        if(c === '\r' && next === '\n') i++;
-        row.push(field); field = '';
-        if(row.some(f=>f.trim() !== '')) rows.push(row);
-        row = [];
-      } else field += c;
-    }
+/* Converte um valor de data vindo do Supabase (ISO) pro formato
+   brasileiro que o resto do painel já espera (dd/mm/aaaa, com hora
+   opcional). Trata "date" (só data, ex.: "2026-07-27") e "timestamptz"
+   (data+hora com fuso, ex.: "2026-07-27T14:32:00+00:00") diferente:
+   string "date" pura NUNCA passa pelo construtor Date() (ele assume UTC
+   pra strings assim, o que pode "voltar" um dia em fusos atrás de UTC,
+   como o do Brasil) — por isso essa é fatiada na mão. */
+function timestampParaBR(iso){
+  if(!iso) return '';
+  if(!iso.includes('T')){
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
   }
-  if(field !== '' || row.length){ row.push(field); if(row.some(f=>f.trim()!=='')) rows.push(row); }
-  if(rows.length === 0) return [];
-  const headers = rows[0].map(h=>h.trim().toUpperCase());
-  return rows.slice(1).map(r=>{
-    const obj = {};
-    headers.forEach((h,i)=> obj[h] = (r[i]||'').trim());
-    return obj;
-  });
+  const dt = new Date(iso);
+  if(isNaN(dt.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  const dataTxt = `${p(dt.getDate())}/${p(dt.getMonth()+1)}/${dt.getFullYear()}`;
+  const temHora = dt.getHours() !== 0 || dt.getMinutes() !== 0;
+  return temHora ? `${dataTxt} ${p(dt.getHours())}:${p(dt.getMinutes())}` : dataTxt;
 }
 
 /* Escapa texto vindo da planilha antes de inserir no HTML — a planilha é
@@ -951,50 +976,31 @@ function tomDaFamilia(nome, indice, total){
    o aviso "N linhas ignoradas" na tela, pra quem está de olho na planilha
    saber exatamente o que corrigir (e em qual campo). */
 function normalizeOcupacaoRow(row){
-  const rua = parseInt(row['RUA'], 10);
-  const andar = parseInt(row['ANDAR'], 10);
-  const posicao = parseInt(row['POSIÇÃO'] || row['POSICAO'], 10);
-  let lado = (row['LADO'] || '').trim().toUpperCase();
-  if(rua === 4) lado = 'U';
-  const paleteNum = (row['PALETE'] || '').replace(/[^0-9]/g,'');
-  const familia = (row['FAMÍLIA'] || row['FAMILIA'] || '').trim();
-  const produto = (row['PRODUTO'] || '').trim();
+  const posicao = row.posicao;
+  const paleteNum = row.palete != null ? String(row.palete) : '';
+  const familia = (row.familia || '').trim();
+  const produto = (row.produto || '').trim();
   // um palete pode ter mais de um produto quando nenhum deles sozinho
-  // fecha o palete inteiro — nesse caso a planilha registra
-  // "Produto 1, Produto 2, Produto 3" no mesmo campo PRODUTO
+  // fecha o palete inteiro — nesse caso o campo produto vem como
+  // "Produto 1, Produto 2, Produto 3" (formato antigo, de antes do
+  // palete misto virar 1 linha por produto)
   const produtos = produto ? produto.split(',').map(p => p.trim()).filter(Boolean) : [];
-  const dataProducao = (row['DATA DE PRODUÇÃO'] || row['DATA DE PRODUCAO'] || row['DATA PRODUCAO'] || '').trim();
-  const dataEntrada = (row['DATA ENTRADA'] || '').trim();
-  const dataSaida = (row['DATA SAÍDA'] || row['DATA SAIDA'] || '').trim();
-  // colunas novas — opcionais, pra continuar lendo sem erro linhas antigas
-  // lançadas antes delas existirem na planilha
-  const pacotesTxt = (row['PACOTES'] || '').toString().trim();
-  const pacotes = pacotesTxt ? parseInt(pacotesTxt, 10) : null;
-  const codigoPalete = (row['CÓDIGO DE RASTREIO'] || row['CODIGO DE RASTREIO'] || row['CÓDIGO PALETE'] || row['CODIGO PALETE'] || '').trim();
-  const caminhao = (row['CAMINHÃO'] || row['CAMINHAO'] || '').trim();
+  const dataProducao = timestampParaBR(row.data_producao);
+  const dataEntrada = timestampParaBR(row.data_entrada);
+  const dataSaida = timestampParaBR(row.data_saida);
+  const pacotes = row.pacotes != null ? row.pacotes : null;
+  const codigoPalete = (row.codigo_rastreio || '').trim();
+  const caminhao = (row.caminhao || '').trim();
 
   const faltando = [];
-  if(!rua) faltando.push('RUA');
-  if(!andar) faltando.push('ANDAR');
   if(!posicao) faltando.push('POSIÇÃO');
+  if(!infoPosicao(posicao)) faltando.push('POSIÇÃO (número fora da faixa 1-560)');
   if(!paleteNum) faltando.push('PALETE');
-  if(!lado) faltando.push('LADO');
 
   if(faltando.length){
     return { ok:false, motivo: `faltando ${faltando.join(', ')}` };
   }
-  return { ok:true, data: { rua, lado, andar, posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, caminhao, ocupado: !dataSaida } };
-}
-
-/* Recebe o resultado de normalizeOcupacaoRow e "carimba" o número real da
-   linha na planilha (1 = cabeçalho, então a primeira linha de dado é a 2).
-   Isso vira o identificador único de cada registro daqui pra frente —
-   diferente do endereço (rua-lado-andar-posição-palete), que pode se
-   repetir por erro de apontamento (duas linhas diferentes anotadas na
-   mesma vaga). Sem isso, o app não tem como distinguir "a mesma linha
-   escolhida duas vezes" de "duas linhas diferentes com endereço igual". */
-function comNumeroDaLinha(data, numeroLinha){
-  return { ...data, linha: numeroLinha };
+  return { ok:true, data: { posicao, palete: paleteNum, familia, produto, produtos, dataProducao, dataEntrada, dataSaida, pacotes, codigoPalete, caminhao, ocupado: !dataSaida, linha: row.id } };
 }
 
 let OCUPACAO_CONFLITOS = []; // posições com mais de 1 registro ocupado ao mesmo tempo (erro de apontamento)
@@ -1008,30 +1014,34 @@ async function carregarDados(){
   const statusEl = document.getElementById('syncStatus');
   if(statusEl) statusEl.textContent = 'Atualizando…';
   try{
-    const [ocupTxt, famTxt, prodTxt] = await Promise.all([
-      fetch(CSV_OCUPACAO).then(r=>r.text()),
-      fetch(CSV_FAMILIAS).then(r=>r.text()),
-      fetch(CSV_PRODUTOS).then(r=>r.text()),
+    const [ocupResp, famResp, prodResp] = await Promise.all([
+      sb.from('ocupacao').select('*'),
+      sb.from('familias').select('*'),
+      sb.from('produtos').select('*'),
     ]);
-    const ocupRows = parseCSV(ocupTxt);
-    FAMILIAS_CATALOGO = parseCSV(famTxt);
-    PRODUTOS_CATALOGO = parseCSV(prodTxt)
+    if(ocupResp.error) throw ocupResp.error;
+    if(famResp.error) throw famResp.error;
+    if(prodResp.error) throw prodResp.error;
+
+    // mantém as mesmas chaves em maiúsculo que o resto do código já usava
+    // com o CSV — assim não precisou reescrever quem lê esse catálogo
+    FAMILIAS_CATALOGO = (famResp.data || []).map(r => ({
+      FAMILIA: r.familia, CÓDIGO: r.codigo_produto, PRODUTO: r.produto, RUA: r.rua,
+    }));
+    PRODUTOS_CATALOGO = (prodResp.data || [])
       .map(r => ({
-        codigo: (r['CODIGO'] || '').trim(),
-        descricao: (r['DESCRICAO'] || r['DESCRIÇÃO'] || '').trim(),
-        familia: (r['FAMILIA'] || r['FAMÍLIA'] || '').trim(),
+        codigo: (r.codigo ?? '').toString().trim(),
+        descricao: (r.descricao || '').trim(),
+        familia: '', // a tabela produtos não guarda família — vem de "familias" ou do estoque atual
       }))
       .filter(p => p.descricao);
 
-    // linha 1 da planilha é o cabeçalho, então a linha real de cada item
-    // de ocupRows[i] é i+2 — isso é o que mostramos no aviso, pra bater
-    // com o que a pessoa vê ao abrir o Google Sheets
     OCUPACAO_REGISTROS = [];
     LINHAS_IGNORADAS = [];
-    ocupRows.forEach((row, i)=>{
+    (ocupResp.data || []).forEach(row=>{
       const resultado = normalizeOcupacaoRow(row);
-      if(resultado.ok) OCUPACAO_REGISTROS.push(comNumeroDaLinha(resultado.data, i + 2));
-      else LINHAS_IGNORADAS.push({ linha: i + 2, motivo: resultado.motivo });
+      if(resultado.ok) OCUPACAO_REGISTROS.push(resultado.data);
+      else LINHAS_IGNORADAS.push({ linha: row.id, motivo: resultado.motivo });
     });
 
     // agrupa por posição+palete pra achar onde há mais de 1 registro "aberto"
@@ -1040,7 +1050,7 @@ async function carregarDados(){
     const porChave = {};
     OCUPACAO_REGISTROS.forEach(r=>{
       if(!r.ocupado) return;
-      const key = cellCode(r.rua, r.lado, r.andar, r.posicao, r.palete);
+      const key = cellCode(r.posicao, r.palete);
       (porChave[key] = porChave[key] || []).push(r);
     });
 
@@ -1061,18 +1071,18 @@ async function carregarDados(){
       }
     });
 
-    // posição 01 de cada andar/frente só comporta 1 palete fisicamente —
-    // se tiver um P2 cadastrado ali (dado de antes dessa regra existir),
-    // aponta pra corrigir na planilha em vez de só esconder no mapa
-    POSICOES_01_INVALIDAS = OCUPACAO_REGISTROS.filter(r => r.ocupado && r.posicao === 1 && r.palete === '2');
+    // posições de 1 só palete (a 1ª de cada segmento) — se tiver um P2
+    // cadastrado ali (dado de antes dessa regra existir), aponta pra
+    // corrigir em vez de só esconder no mapa
+    POSICOES_01_INVALIDAS = OCUPACAO_REGISTROS.filter(r => r.ocupado && capacidadeDaPosicao(r.posicao) === 1 && r.palete === '2');
 
     ultimaAtualizacao = new Date();
     const sufixoIgnoradas = LINHAS_IGNORADAS.length
-      ? ` · ⚠ ${LINHAS_IGNORADAS.length} linha(s) da planilha ignorada(s)`
+      ? ` · ⚠ ${LINHAS_IGNORADAS.length} registro(s) ignorado(s)`
       : '';
     if(statusEl) statusEl.textContent = `Atualizado às ${ultimaAtualizacao.toLocaleTimeString('pt-BR')}${sufixoIgnoradas}`;
   } catch(err){
-    console.error('Erro ao carregar planilhas:', err);
+    console.error('Erro ao carregar dados do Supabase:', err);
     if(statusEl) statusEl.textContent = 'Erro ao buscar dados — tentando de novo em breve';
   } finally {
     CARREGANDO_DADOS = false;
@@ -1080,70 +1090,72 @@ async function carregarDados(){
   renderAll();
 }
 
-/* Gera a lista de células (com x, número e se é extra) para um lado de 42 posições.
-   Cada posição comporta 2 paletes lado a lado (P1 e P2) — por isso cada célula
-   é mais larga e é dividida ao meio na horizontal na hora de desenhar. */
-function buildRackCells(){
+/* Gera a lista de células (x, posição local, segmento) pro desenho de uma
+   fileira — o layout visual (onde cada bloco fica) é igual em toda
+   fileira que tem extra, e igual em toda fileira que não tem, então só
+   precisamos de 2 variantes (não uma por rua/andar). */
+function buildRackCells(temExtra){
   const cellW = 26, cellH = 30, gap = 2, groupGap = 11;
   const cells = [];
   let x = 0;
-  for(let i=0; i<POS_POR_LADO; i++){
-    const isExtraStart = i === EXTRA_START;
-    const isExtraEnd = i === EXTRA_START + EXTRA_COUNT;
-    if(isExtraStart || isExtraEnd) x += groupGap - gap;
-    const isExtra = i >= EXTRA_START && i < EXTRA_START + EXTRA_COUNT;
-    cells.push({ x, w: cellW, h: cellH, numero: i+1, isExtra });
+  for(let i=1; i<=10; i++){
+    cells.push({ x, w: cellW, h: cellH, posLocal: i, segmento: 'esquerda' });
+    x += cellW + gap;
+  }
+  x += groupGap - gap;
+  if(temExtra){
+    [1,2].forEach(e=>{
+      cells.push({ x, w: cellW, h: cellH, posLocal: e, segmento: 'corredor' });
+      x += cellW + gap;
+    });
+    x += groupGap - gap;
+  } else {
+    x += 2*cellW + gap + (groupGap - gap); // vão vazio do mesmo tamanho de 2 posições
+  }
+  for(let i=1; i<=9; i++){
+    cells.push({ x, w: cellW, h: cellH, posLocal: i, segmento: 'direita' });
     x += cellW + gap;
   }
   return { cells, totalWidth: x - gap };
 }
+const RACK_COM_EXTRA = buildRackCells(true);
+const RACK_SEM_EXTRA = buildRackCells(false);
+function rackDoAndar(andar){ return (andar === 3 || andar === 4) ? RACK_COM_EXTRA : RACK_SEM_EXTRA; }
 
-const RACK = buildRackCells();
-
-function cellCode(rua, lado, andar, numero, palete){
-  const base = `R${rua}-${lado}-A${andar}-${String(numero).padStart(2,'0')}`;
-  return palete ? `${base}-P${palete}` : base;
+/* Endereço em texto agora é só "posição + palete" — a posição sequencial
+   já carrega rua/longarina/andar/segmento sozinha (ver CAMARA1_MAPA). */
+function cellCode(posicao, palete){
+  return palete ? `P${posicao}-${palete}` : `P${posicao}`;
 }
 
-/* Constrói o SVG de um "lado" (rack). Cada posição normal vira 2 retângulos
-   lado a lado (P1 à esquerda, P2 à direita). As posições 21/22 só viram
-   vagas de verdade nos andares 3 e 4 (ver andarTemExtra) — nos andares 1 e 2
-   aparecem como bloco travado (sem P1/P2, com textura hachurada), já que
-   ali não existe posição de armazenagem. */
-function renderRackSvg(rua, lado, andar){
-  const h = RACK.cells[0].h;
-  const extraAtivo = andarTemExtra(andar);
+/* Constrói o SVG de uma fileira (rua+longarina+andar). Cada posição normal
+   vira 2 retângulos lado a lado (P1 à esquerda, P2 à direita); a 1ª
+   posição de cada segmento (esquerda e direita) só comporta 1 palete. */
+function renderRackSvg(rua, longarina, andar){
+  const rack = rackDoAndar(andar);
+  const posicoes = posicoesDaFileira(rua, longarina, andar); // mesma ordem dos cells
+  const h = rack.cells[0].h;
   let rects = '';
-  RACK.cells.forEach(c=>{
-    const codeOuter = cellCode(rua, lado, andar, c.numero);
-
-    if(c.isExtra && !extraAtivo){
-      // bloqueado: não existe posição de armazenagem neste andar
-      rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
-                  fill="url(#hatch)" stroke="var(--text-soft)" stroke-width="1"
-                  data-code="${codeOuter} · sem posição neste andar" class="rack-cell"
-                  style="cursor:default;opacity:0.5;"></rect>`;
-      return;
-    }
-
-    const fill = c.isExtra ? 'var(--extra)' : 'var(--bg-soft)';
-    const stroke = c.isExtra ? 'var(--extra-dim)' : 'var(--frost-dim)';
-    const codeP1 = cellCode(rua, lado, andar, c.numero, 1);
-    const codeP2 = cellCode(rua, lado, andar, c.numero, 2);
+  rack.cells.forEach((c, idx)=>{
+    const p = posicoes[idx];
+    if(!p) return;
+    const numero = p.posicao;
+    const isExtra = c.segmento === 'corredor';
+    const codeOuter = cellCode(numero);
+    const fill = isExtra ? 'var(--extra)' : 'var(--bg-soft)';
+    const stroke = isExtra ? 'var(--extra-dim)' : 'var(--frost-dim)';
+    const codeP1 = cellCode(numero, 1);
+    const codeP2 = cellCode(numero, 2);
     const ocupP1 = OCUPACAO_MAP[codeP1];
     const ocupP2 = OCUPACAO_MAP[codeP2];
     const fillP1 = ocupP1 ? familyColor(ocupP1.familia) : fill;
     const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
     const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
     const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
-    const dataP1 = ocupP1 ? `${codeP1} · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP1.produtos)) : ''}${ocupP1.dataProducao ? ' · produzido ' + escapeHtml(ocupP1.dataProducao) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP1;
-    const dataP2 = ocupP2 ? `${codeP2} · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP2.produtos)) : ''}${ocupP2.dataProducao ? ' · produzido ' + escapeHtml(ocupP2.dataProducao) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : codeP2;
-    const halfW = (c.w - 2) / 2; // 2px de divisor entre P1 e P2
+    const dataP1 = ocupP1 ? `Posição ${numero}-P1 · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP1.produtos)) : ''}${ocupP1.dataProducao ? ' · produzido ' + escapeHtml(ocupP1.dataProducao) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : `Posição ${numero}-P1`;
+    const dataP2 = ocupP2 ? `Posição ${numero}-P2 · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP2.produtos)) : ''}${ocupP2.dataProducao ? ' · produzido ' + escapeHtml(ocupP2.dataProducao) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : `Posição ${numero}-P2`;
+    const halfW = (c.w - 2) / 2;
 
-    // com busca de texto e/ou família selecionada na legenda: posições que
-    // combinam com os dois filtros ativos ficam com contorno em destaque;
-    // as demais (inclusive vazias) ficam bem apagadas, pra saltar aos
-    // olhos onde está o que foi procurado/selecionado
     const buscaAtiva = !!FILTRO_PRODUTO || !!FILTRO_FAMILIA_MAPA;
     const matchP1 = ocupP1 && produtoCombina(ocupP1.produtos) && (!FILTRO_FAMILIA_MAPA || ocupP1.familia === FILTRO_FAMILIA_MAPA);
     const matchP2 = ocupP2 && produtoCombina(ocupP2.produtos) && (!FILTRO_FAMILIA_MAPA || ocupP2.familia === FILTRO_FAMILIA_MAPA);
@@ -1154,11 +1166,11 @@ function renderRackSvg(rua, lado, andar){
     const opP1 = buscaAtiva ? (matchP1 ? '1' : '0.12') : '1';
     const opP2 = buscaAtiva ? (matchP2 ? '0.72' : '0.12') : '0.72';
 
-    // Posição 01 só comporta 1 palete de verdade — desenha uma vaga única,
-    // não duas. Exceção: se por algum motivo já existir um registro de P2
-    // aqui (dado antigo incorreto), mantém o desenho normal de 2 caixas,
-    // pra não esconder esse problema em vez de sinalizar ele.
-    if(c.numero === 1 && !ocupP2){
+    // 1ª posição de cada segmento só comporta 1 palete — desenha uma vaga
+    // única, não duas. Exceção: se já existir um registro de P2 aqui
+    // (dado incorreto), mantém o desenho normal, pra sinalizar o problema
+    // em vez de escondê-lo.
+    if(p.capacidade === 1 && !ocupP2){
       rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
                   fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter} · só 1 palete cabe aqui"></rect>`;
       rects += `<rect x="${c.x+1.5}" y="1.5" width="${c.w-3}" height="${c.h-3}" rx="1.5"
@@ -1167,34 +1179,36 @@ function renderRackSvg(rua, lado, andar){
       return;
     }
 
-    // contorno externo da posição (agrupa os 2 paletes)
     rects += `<rect x="${c.x}" y="0" width="${c.w}" height="${c.h}" rx="2.5"
                 fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter}"></rect>`;
-    // P1 — palete da esquerda
     rects += `<rect x="${c.x+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
                 fill="${fillP1}" stroke="${strokeP1}" stroke-width="${swP1}" opacity="${opP1}"
                 class="rack-cell${conflitoP1 ? ' conflito-pulse' : ''}" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
-    // P2 — palete da direita
     rects += `<rect x="${c.x+halfW+1.5}" y="1.5" width="${halfW-1.5}" height="${c.h-3}" rx="1.5"
                 fill="${fillP2}" stroke="${strokeP2}" stroke-width="${swP2}" opacity="${opP2}"
                 class="rack-cell${conflitoP2 ? ' conflito-pulse' : ''}" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
   });
-  const hatchDef = `<defs><pattern id="hatch" width="5" height="5" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-    <rect width="5" height="5" fill="var(--bg-soft)"></rect>
-    <line x1="0" y1="0" x2="0" y2="5" stroke="var(--text-soft)" stroke-width="1.4"></line>
-  </pattern></defs>`;
-  return `<svg width="${RACK.totalWidth}" height="${h}" style="display:block;">${hatchDef}${rects}</svg>`;
+  return `<svg width="${rack.totalWidth}" height="${h}" style="display:block;">${rects}</svg>`;
 }
 
 /* Porta desenhada no mesmo estilo da planta baixa: um trecho de parede com
-   um vão + o arco de abertura, alinhado ao centro das posições 21/22.
-   side='top'    -> parede fica ACIMA do rack (a porta "fecha" o lado de trás
-                     do Lado A) — usada na Rua 1.
+   um vão + o arco de abertura, alinhado ao centro do corredor interno
+   (ou do vão vazio, nos andares sem extra).
+   side='top'    -> parede fica ACIMA do rack — usada na Rua 1.
    side='bottom' -> parede fica ABAIXO do rack — usada na Rua 4. */
-function doorWallHtml(portaLabel, side){
-  const first = RACK.cells[EXTRA_START];
-  const last = RACK.cells[EXTRA_START + EXTRA_COUNT - 1];
-  const centerX = (first.x + last.x + last.w) / 2;
+function doorWallHtml(portaLabel, side, andar){
+  const rack = rackDoAndar(andar);
+  const corredorCells = rack.cells.filter(c => c.segmento === 'corredor');
+  let centerX;
+  if(corredorCells.length){
+    const first = corredorCells[0], last = corredorCells[corredorCells.length-1];
+    centerX = (first.x + last.x + last.w) / 2;
+  } else {
+    const esqCells = rack.cells.filter(c => c.segmento === 'esquerda');
+    const dirCells = rack.cells.filter(c => c.segmento === 'direita');
+    const lastEsq = esqCells[esqCells.length-1], firstDir = dirCells[0];
+    centerX = (lastEsq.x + lastEsq.w + firstDir.x) / 2;
+  }
   const doorW = 40, wallColor = '#5C5049', h = 66;
   const isTop = side === 'top';
   const wallY = isTop ? h - 12 : 12;
@@ -1202,9 +1216,9 @@ function doorWallHtml(portaLabel, side){
   const sweep = isTop ? 0 : 1;
   const labelY = isTop ? leafEndY - 10 : leafEndY + 18;
   return `
-    <svg width="${RACK.totalWidth}" height="${h}" style="display:block;overflow:visible;">
+    <svg width="${rack.totalWidth}" height="${h}" style="display:block;overflow:visible;">
       <line x1="0" y1="${wallY}" x2="${centerX-doorW/2}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
-      <line x1="${centerX+doorW/2}" y1="${wallY}" x2="${RACK.totalWidth}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
+      <line x1="${centerX+doorW/2}" y1="${wallY}" x2="${rack.totalWidth}" y2="${wallY}" stroke="${wallColor}" stroke-width="4"></line>
       <line x1="${centerX-doorW/2}" y1="${wallY}" x2="${centerX-doorW/2}" y2="${leafEndY}" stroke="${wallColor}" stroke-width="2"></line>
       <path d="M ${centerX-doorW/2} ${leafEndY} A ${doorW} ${doorW} 0 0 ${sweep} ${centerX+doorW/2} ${wallY}" fill="none" stroke="${wallColor}" stroke-width="1" stroke-dasharray="3,3" opacity="0.65"></path>
       <text x="${centerX}" y="${labelY}" font-size="11" fill="var(--extra)" font-weight="800" text-anchor="middle" letter-spacing="0.5">${portaLabel}</text>
@@ -1212,41 +1226,42 @@ function doorWallHtml(portaLabel, side){
   `;
 }
 
-function renderRua(rua, andar){
-  const isDouble = rua.lados.length === 2;
-  const extraAtivo = andarTemExtra(andar);
-  const posPorLadoNesteAndar = extraAtivo ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
-  const capacidade = rua.lados.length * posPorLadoNesteAndar;
-  const portaLabel = PORTA_POR_RUA[rua.numero];
-  const portaSide = PORTA_SIDE[rua.numero];
-  const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide) : '';
+function renderRua(ruaNumero, andar){
+  const longarinas = longarinasDaRua(ruaNumero); // ['A','B'] ou ['única']
+  const isDouble = longarinas.length === 2;
+  const rack = rackDoAndar(andar);
+  const capacidade = longarinas.length * rack.cells.length;
+  const temExtra = (andar === 3 || andar === 4);
+  const portaLabel = ruaNumero === 1 ? 'Entrada' : (ruaNumero === 4 ? 'Saída' : null);
+  const portaSide = ruaNumero === 1 ? 'top' : (ruaNumero === 4 ? 'bottom' : null);
+  const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide, andar) : '';
 
   let body = '';
   if(isDouble){
     body = `
       ${portaSide === 'top' ? portaHtml : ''}
-      <div class="lado-label">Lado A</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'A', andar)}</div>
-      <div class="rua-mid-label">Rua ${rua.numero}</div>
-      <div class="lado-label">Lado B</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'B', andar)}</div>
+      <div class="lado-label">Longarina A</div>
+      <div class="rack-scroll">${renderRackSvg(ruaNumero, 'A', andar)}</div>
+      <div class="rua-mid-label">Rua ${ruaNumero}</div>
+      <div class="lado-label">Longarina B</div>
+      <div class="rack-scroll">${renderRackSvg(ruaNumero, 'B', andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
   } else {
     body = `
       ${portaSide === 'top' ? portaHtml : ''}
-      <div class="rua-mid-label">Rua ${rua.numero}</div>
-      <div class="lado-label">Lado único</div>
-      <div class="rack-scroll">${renderRackSvg(rua.numero, 'U', andar)}</div>
+      <div class="rua-mid-label">Rua ${ruaNumero}</div>
+      <div class="lado-label">Longarina única</div>
+      <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[0], andar)}</div>
       ${portaSide === 'bottom' ? portaHtml : ''}
     `;
   }
 
-  const paletesNesteAndar = rua.lados.length * paletesTotaisNoAndar(andar);
+  const paletesNesteAndar = longarinas.length * paletesTotaisNoAndar(andar);
   return `
     <div class="rua-panel">
       <div class="rua-head">
-        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 lados' : '1 lado'} · 20 ${extraAtivo ? '+ 2 (extra) ' : ''}+ 20 ${isDouble ? 'por lado' : ''}${!extraAtivo ? ' · sem as 2 extras neste andar' : ''}</span>
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · ${isDouble ? '2 longarinas' : '1 longarina'} · 10 + ${temExtra ? 'E1/E2 + ' : ''}9${isDouble ? ' por longarina' : ''}${!temExtra ? ' · corredor vazio neste andar' : ''}</span>
       </div>
       ${body}
     </div>
@@ -1254,35 +1269,26 @@ function renderRua(rua, andar){
 }
 
 function posicoesPorAndar(andar){
-  const posPorLado = andarTemExtra(andar) ? POS_POR_LADO : (POS_POR_LADO - EXTRA_COUNT);
-  return RUAS.reduce((sum,r)=> sum + r.lados.length*posPorLado, 0);
+  const rack = rackDoAndar(andar);
+  return ruasExistentes().reduce((sum, rua) => sum + longarinasDaRua(rua).length * rack.cells.length, 0);
 }
 
-/* Conta quantos paletes (P1+P2) estão ocupados numa rua/lado/andar específicos */
-function paletesOcupados(rua, lado, andar){
+/* Conta quantos paletes (P1+P2) estão ocupados numa rua/longarina/andar específicos */
+function paletesOcupados(rua, longarina, andar){
   let count = 0;
-  RACK.cells.forEach(c=>{
-    if(c.isExtra && !andarTemExtra(andar)) return; // não existe posição aqui
-    [1,2].forEach(p=>{
-      if(OCUPACAO_MAP[cellCode(rua, lado, andar, c.numero, p)]) count++;
+  posicoesDaFileira(rua, longarina, andar).forEach(p=>{
+    [1,2].forEach(pal=>{
+      if(OCUPACAO_MAP[cellCode(p.posicao, pal)]) count++;
     });
   });
   return count;
 }
 
-/* Quantos paletes cabem numa posição: 2 (P1+P2) pra quase todas, exceto a
-   Posição 01 de cada andar/frente, que só comporta 1 palete (P1) — regra
-   física da câmara, confirmada pela operação. */
-function capacidadePosicao(numero){
-  return numero === 1 ? 1 : PALETES_POR_POSICAO;
-}
-
 function paletesTotaisNoAndar(andar){
-  const extraAtivo = andarTemExtra(andar);
+  const rack = rackDoAndar(andar);
   let total = 0;
-  RACK.cells.forEach(c => {
-    if(c.isExtra && !extraAtivo) return; // não existe posição aqui
-    total += capacidadePosicao(c.numero);
+  rack.cells.forEach(c=>{
+    total += (c.segmento === 'corredor') ? 2 : (c.posLocal === 1 ? 1 : 2);
   });
   return total;
 }
@@ -1335,7 +1341,7 @@ function renderLinhasIgnoradas(){
   if(LINHAS_IGNORADAS.length === 0){ el.innerHTML = ''; return; }
 
   const itens = LINHAS_IGNORADAS
-    .map(l => `<li>Linha ${l.linha} da aba "Ocupação" — ${escapeHtml(l.motivo)}</li>`)
+    .map(l => `<li>Registro #${l.linha} (tabela "ocupacao") — ${escapeHtml(l.motivo)}</li>`)
     .join('');
 
   el.innerHTML = `
@@ -1356,13 +1362,14 @@ function renderPosicoes01Invalidas(){
   if(POSICOES_01_INVALIDAS.length === 0){ el.innerHTML = ''; return; }
 
   const itens = POSICOES_01_INVALIDAS.map(r => {
-    const ladoTxt = r.lado === 'U' ? '' : ` Lado ${escapeHtml(r.lado)}`;
-    return `<li>Rua ${r.rua}${ladoTxt} · Andar ${r.andar} · Posição 01-P2 — ${escapeHtml(r.familia || 'sem família')}${r.produtos.length ? ' · ' + escapeHtml(r.produtos.join(', ')) : ''}</li>`;
+    const info = infoPosicao(r.posicao);
+    const longarinaTxt = info.longarina === 'única' ? '' : ` Longarina ${escapeHtml(info.longarina)}`;
+    return `<li>Posição ${r.posicao} (Rua ${info.rua}${longarinaTxt} · Andar ${info.andar}) · P2 indevido — ${escapeHtml(r.familia || 'sem família')}${r.produtos.length ? ' · ' + escapeHtml(r.produtos.join(', ')) : ''}</li>`;
   }).join('');
 
   el.innerHTML = `
     <div class="ignoradas-panel">
-      <span class="ignoradas-title">${POSICOES_01_INVALIDAS.length} posição(ões) 01 com um 2º palete indevido</span>
+      <span class="ignoradas-title">${POSICOES_01_INVALIDAS.length} posição(ões) de 1 palete com um 2º palete indevido</span>
       <ul>${itens}</ul>
     </div>
   `;
@@ -1387,37 +1394,37 @@ function renderConflitos(){
   `;
 }
 
-/* Acha a primeira vaga livre (posição + palete) dentro de um andar,
-   respeitando as posições extras bloqueadas nos andares 1/2. */
-function encontrarPrimeiraVagaLivre(rua, lado, andar){
-  for(const c of RACK.cells){
-    if(c.isExtra && !andarTemExtra(andar)) continue;
-    const paletesDaPosicao = c.numero === 1 ? [1] : [1, 2]; // posição 01 só tem P1
-    for(const p of paletesDaPosicao){
-      const key = cellCode(rua, lado, andar, c.numero, p);
-      if(!OCUPACAO_MAP[key]) return { posicao: c.numero, palete: p };
+/* Acha a primeira vaga livre (posição + palete) dentro de um andar, numa
+   rua/longarina específica. */
+function encontrarPrimeiraVagaLivre(rua, longarina, andar){
+  for(const p of posicoesDaFileira(rua, longarina, andar)){
+    const paletesDaPosicao = p.capacidade === 1 ? [1] : [1, 2];
+    for(const pal of paletesDaPosicao){
+      const key = cellCode(p.posicao, pal);
+      if(!OCUPACAO_MAP[key]) return { posicao: p.posicao, palete: pal };
     }
   }
   return null;
 }
 
-/* Calcula o status de vaga de UMA rua/lado: em qual andar entraria o
+/* Calcula o status de vaga de UMA rua/longarina: em qual andar entraria o
    próximo palete (regra "de baixo pra cima"), quanto ainda cabe nesse
    andar, e quanto ainda cabe NA RUA TODA (soma de todos os andares) —
    esse último número é o que usamos pra decidir qual rua "fechar" primeiro
    quando uma família está espalhada em mais de uma. */
-function statusRuaLado(rua, lado){
+function statusRuaLado(rua, longarina){
   let andarAlvo = null;
   for(const andar of ANDARES){
-    if(paletesOcupados(rua, lado, andar) < paletesTotaisNoAndar(andar)){ andarAlvo = andar; break; }
+    if(paletesOcupados(rua, longarina, andar) < paletesTotaisNoAndar(andar)){ andarAlvo = andar; break; }
   }
   let livresTotal = 0;
-  ANDARES.forEach(andar => livresTotal += paletesTotaisNoAndar(andar) - paletesOcupados(rua, lado, andar));
-  const temAlgumaFamilia = OCUPACAO_REGISTROS.some(r => r.ocupado && r.rua === rua && r.lado === lado);
+  ANDARES.forEach(andar => livresTotal += paletesTotaisNoAndar(andar) - paletesOcupados(rua, longarina, andar));
+  const posicoesDestaLongarina = new Set(Object.values(CAMARA1_MAPA).filter(p => p.rua === rua && p.longarina === longarina).map(p => p.posicao));
+  const temAlgumaFamilia = OCUPACAO_REGISTROS.some(r => r.ocupado && posicoesDestaLongarina.has(r.posicao));
   return {
-    rua, lado, andarAlvo, livresTotal, temAlgumaFamilia,
-    vaga: andarAlvo !== null ? encontrarPrimeiraVagaLivre(rua, lado, andarAlvo) : null,
-    livresAndar: andarAlvo !== null ? (paletesTotaisNoAndar(andarAlvo) - paletesOcupados(rua, lado, andarAlvo)) : 0,
+    rua, lado: longarina, andarAlvo, livresTotal, temAlgumaFamilia,
+    vaga: andarAlvo !== null ? encontrarPrimeiraVagaLivre(rua, longarina, andarAlvo) : null,
+    livresAndar: andarAlvo !== null ? (paletesTotaisNoAndar(andarAlvo) - paletesOcupados(rua, longarina, andarAlvo)) : 0,
   };
 }
 
@@ -1454,9 +1461,9 @@ function renderFamilyLegend(){
    realmente usa pra saber "quanto ainda cabe". */
 function calcularOcupacaoCamara(){
   let ocupados = 0, capacidade = 0;
-  RUAS.forEach(rua => rua.lados.forEach(lado => {
+  ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => {
     andaresConsiderados().forEach(andar => {
-      ocupados += paletesOcupados(rua.numero, lado, andar);
+      ocupados += paletesOcupados(rua, longarina, andar);
       capacidade += paletesTotaisNoAndar(andar);
     });
   }));
@@ -1464,21 +1471,21 @@ function calcularOcupacaoCamara(){
   return [{ label, ocupados, capacidade }];
 }
 function calcularOcupacaoPorRua(){
-  return RUAS.flatMap(rua => rua.lados.map(lado => {
+  return ruasExistentes().flatMap(rua => longarinasDaRua(rua).map(longarina => {
     let ocupados = 0, capacidade = 0;
     andaresConsiderados().forEach(andar => {
-      ocupados += paletesOcupados(rua.numero, lado, andar);
+      ocupados += paletesOcupados(rua, longarina, andar);
       capacidade += paletesTotaisNoAndar(andar);
     });
-    const label = lado === 'U' ? `Rua ${rua.numero}` : `Rua ${rua.numero} · Lado ${lado}`;
+    const label = longarina === 'única' ? `Rua ${rua}` : `Rua ${rua} · Longarina ${longarina}`;
     return { label, ocupados, capacidade };
   }));
 }
 function calcularOcupacaoPorAndar(){
   return andaresConsiderados().map(andar => {
     let ocupados = 0;
-    RUAS.forEach(rua => rua.lados.forEach(lado => { ocupados += paletesOcupados(rua.numero, lado, andar); }));
-    const capacidade = RUAS.reduce((sum, rua) => sum + rua.lados.length * paletesTotaisNoAndar(andar), 0);
+    ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => { ocupados += paletesOcupados(rua, longarina, andar); }));
+    const capacidade = ruasExistentes().reduce((sum, rua) => sum + longarinasDaRua(rua).length * paletesTotaisNoAndar(andar), 0);
     return { label: `Andar ${andar}`, ocupados, capacidade };
   });
 }
@@ -1991,13 +1998,12 @@ function renderResultadoBuscaCodigoConsulta(codigo, registros){
     return;
   }
   const primeiro = registros[0];
-  const ladoTxt = primeiro.lado === 'U' ? '' : ` Lado ${primeiro.lado}`;
   const linhas = registros.map(r => {
     const statusTxt = r.ocupado ? '' : ` <span style="opacity:.65;">· já saiu (${escapeHtml(r.dataSaida)})</span>`;
     return `<div class="entrada-vaga-row">${escapeHtml(r.produto)} — <strong>${r.pacotes ? `${r.pacotes} pacote${r.pacotes===1?'':'s'}` : 'sem pacotes registrados'}</strong>${statusTxt}</div>`;
   }).join('');
   el.innerHTML = `
-    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(codigo)}</strong> — Rua ${primeiro.rua}${ladoTxt} · And.${primeiro.andar} · Pos.${String(primeiro.posicao).padStart(2,'0')}-P${primeiro.palete} · ${registros.length} produto${registros.length===1?'':'s'}:</div>
+    <div class="carga-dica" style="margin-top:10px;">Palete <strong>${escapeHtml(codigo)}</strong> — ${enderecoTexto(primeiro.posicao, primeiro.palete)} · ${registros.length} produto${registros.length===1?'':'s'}:</div>
     <div class="entrada-vagas-lista">${linhas}</div>
   `;
 }
@@ -2076,7 +2082,7 @@ function adicionarLinhaDaCargaPorCodigo(linha, produto, pacotesRetirar){
     linha, produto,
     pacotesTotalNoMomento: registro.pacotes, // pra comparar depois se foi parcial ou não
     pacotesRetirar: pacotesFinal,             // null = sem info de pacotes (retira o palete inteiro, sem opção de parcial)
-    rua: registro.rua, lado: registro.lado, andar: registro.andar, posicao: registro.posicao, palete: registro.palete,
+    posicao: registro.posicao, palete: registro.palete,
     produtosOriginais: registro.produtos, codigoPalete: registro.codigoPalete,
   });
   renderCargaTudo();
@@ -2167,14 +2173,13 @@ function renderCargaLista(){
   const linhasBusca = CARGA_ITENS_LINHA.map(entrada=>{
     const familia = familiaDoProduto(entrada.produto);
     const cor = familia ? familyColor(familia) : 'var(--text-soft)';
-    const ladoTxt = entrada.lado === 'U' ? '' : ` Lado ${entrada.lado}`;
     const ehParcial = entrada.pacotesTotalNoMomento && entrada.pacotesRetirar && entrada.pacotesRetirar < entrada.pacotesTotalNoMomento;
     const qtdTxt = ehParcial
       ? ` · <strong style="color:var(--extra);">${entrada.pacotesRetirar} de ${entrada.pacotesTotalNoMomento} pacotes (parcial)</strong>`
       : (entrada.pacotesTotalNoMomento ? ` · ${entrada.pacotesTotalNoMomento} pacotes (palete inteiro)` : ' · palete inteiro');
     return `<div class="carga-row">
       <span class="estoque-swatch" style="background:${cor}"></span>
-      <span class="cr-nome">${escapeHtml(entrada.produto)}${qtdTxt}<br><small style="opacity:.65;">Rua ${entrada.rua}${ladoTxt} · And.${entrada.andar} · Pos.${String(entrada.posicao).padStart(2,'0')}-P${entrada.palete} · código ${escapeHtml(entrada.codigoPalete || '—')}</small></span>
+      <span class="cr-nome">${escapeHtml(entrada.produto)}${qtdTxt}<br><small style="opacity:.65;">${enderecoTexto(entrada.posicao, entrada.palete)} · código ${escapeHtml(entrada.codigoPalete || '—')}</small></span>
       <button class="cr-remover" data-acao="remover-linha" data-linha="${entrada.linha}" data-produto="${escapeHtml(entrada.produto)}" title="Remover">✕</button>
     </div>`;
   }).join('');
@@ -2228,7 +2233,6 @@ function renderResultadoBuscaCodigo(){
   }
 
   const linhas = BUSCA_CODIGO_RESULTADO.registros.map(r=>{
-    const ladoTxt = r.lado === 'U' ? '' : ` Lado ${r.lado}`;
     const jaAdicionado = CARGA_ITENS_LINHA.some(e => e.linha === r.linha && e.produto === r.produto);
     const temPacotes = !!r.pacotes;
     const campoQtd = temPacotes
@@ -2237,7 +2241,7 @@ function renderResultadoBuscaCodigo(){
     return `<div class="palete-busca-card">
       <div class="palete-busca-titulo">${escapeHtml(r.produto)}</div>
       <div class="palete-busca-total">${temPacotes ? `${r.pacotes} pacote${r.pacotes===1?'':'s'} no palete` : 'Sem pacotes registrados — só dá pra retirar o palete inteiro'}</div>
-      <div class="palete-busca-endereco">Rua ${r.rua}${ladoTxt} · And.${r.andar} · Pos.${String(r.posicao).padStart(2,'0')}-P${r.palete}</div>
+      <div class="palete-busca-endereco">${enderecoTexto(r.posicao, r.palete)}</div>
       <div class="palete-busca-acao">
         ${campoQtd}
         <button class="btn-sync${jaAdicionado ? ' btn-secundario' : ''}" style="padding:6px 12px;" data-linha="${r.linha}" data-produto="${escapeHtml(r.produto)}" ${jaAdicionado ? 'disabled' : ''}>${jaAdicionado ? '✓ na carga' : '+ Adicionar'}</button>
@@ -2342,8 +2346,11 @@ function renderizarPdfRomaneio(estrutura, caminhao){
     y += 7.5;
 
     const linhas = item.paletes.map((p, i) => {
-      const ladoTxt = p.lado === 'U' ? '' : ` Lado ${p.lado}`;
-      const endereco = `Rua ${p.rua}${ladoTxt}  ·  Andar ${p.andar}  ·  Posicao ${String(p.posicao).padStart(2, '0')}  ·  Palete ${p.palete}`;
+      const info = infoPosicao(p.posicao);
+      const longarinaTxt = info && info.longarina !== 'única' ? ` Longarina ${info.longarina}` : '';
+      const endereco = info
+        ? `Rua ${info.rua}${longarinaTxt}  ·  Andar ${info.andar}  ·  Posicao ${p.posicao}  ·  Palete ${p.palete}`
+        : `Posicao ${p.posicao}  ·  Palete ${p.palete}`;
       const outros = p.produtos.filter(x => x !== item.produto);
       const obs = outros.length ? `PALETE MISTO - tambem contem: ${outros.join(', ')}` : '';
       const pacotesTxt = p.pacotesRetirar
@@ -2425,7 +2432,7 @@ function montarPaletesDaCarga(){
     // própria confirmação pro Apps Script.
     const key = p.linha;
     if(!mapa[key]){
-      mapa[key] = { linha: p.linha, rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set(), pacotesTotalAtual: p.pacotes, pacotesRetirar: null };
+      mapa[key] = { linha: p.linha, posicao: p.posicao, palete: p.palete, produtosOriginais: p.produtos, produtosRetirar: new Set(), pacotesTotalAtual: p.pacotes, pacotesRetirar: null };
     }
     mapa[key].produtosRetirar.add(p.produtoAlvo);
     // guarda a quantidade de pacotes pedida, se essa unidade veio com uma
@@ -2442,7 +2449,7 @@ function montarPaletesDaCarga(){
     const ehParcialPacotes = !ambiguo && e.pacotesRetirar && e.pacotesTotalAtual && e.pacotesRetirar < e.pacotesTotalAtual;
     return {
       linha: e.linha,
-      rua: e.rua, lado: e.lado, andar: e.andar, posicao: e.posicao, palete: e.palete,
+      posicao: e.posicao, palete: e.palete,
       produtosOriginais: e.produtosOriginais,
       produtosRetirar: [...e.produtosRetirar],
       ambiguo,
@@ -2457,11 +2464,6 @@ async function confirmarCargaRetirada(){
 
   const caminhao = document.getElementById('inputCaminhao').value.trim();
   if(!caminhao){ alert('Informe a identificação do caminhão antes de confirmar a carga.'); return; }
-
-  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
-    alert('A confirmação automática ainda não foi configurada.\n\nÉ preciso publicar o Apps Script e colar a URL dele na constante APPS_SCRIPT_URL, no início do código. Enquanto isso, continue registrando a DATA SAÍDA manualmente na planilha.');
-    return;
-  }
 
   const paletes = montarPaletesDaCarga();
   const ambiguos = paletes.filter(p => p.ambiguo);
@@ -2487,11 +2489,10 @@ function mostrarRevisaoPaletesMistos(paletes, caminhao){
     </div>
     <div class="entrada-vagas-lista" style="margin-bottom:12px;">
       ${ambiguos.map((p, i)=>{
-        const ladoTxt = p.lado === 'U' ? '' : ` Lado ${p.lado}`;
         const ficam = p.produtosOriginais.filter(x => !p.produtosRetirar.includes(x));
         return `
           <div class="entrada-vaga-row" style="display:block;line-height:1.6;">
-            <strong>Rua ${p.rua}${ladoTxt} · Andar ${p.andar} · Pos.${String(p.posicao).padStart(2, '0')}-P${p.palete}</strong><br>
+            <strong>${enderecoTexto(p.posicao, p.palete)}</strong><br>
             Na carga: ${escapeHtml(p.produtosRetirar.join(', '))}<br>
             Também tem nesse palete: ${escapeHtml(ficam.join(', '))}
             <div style="margin-top:6px;">
@@ -2523,8 +2524,19 @@ function mostrarRevisaoPaletesMistos(paletes, caminhao){
    DATA SAÍDA (posição libera). Paletes "parcial" só tiram os produtos
    pedidos da lista da coluna PRODUTO daquela linha — a posição continua
    ocupada, porque ainda sobrou produto físico nela. */
+/* Endereço em texto, só pra mensagens de erro/confirmação — ver
+   enderecoTexto(posicao, palete), definida junto do módulo de mapeamento. */
+
+/* Manda o lote definitivo pro Supabase. Paletes "completo" preenchem a
+   DATA SAÍDA (posição libera). Paletes "parcial" (formato antigo, vários
+   produtos numa linha só) só tiram os produtos pedidos da lista da
+   coluna produto daquela linha. Paletes "pacotes_parcial" reduzem a
+   coluna pacotes; se chegar a zero, vira uma retirada completa.
+   Antes de aplicar, busca os dados atuais de pacotes/produto direto do
+   banco (não confia só no que já está carregado na tela) — evita
+   confusão se alguém mais mexeu nesse mesmo palete há pouco. */
 async function enviarConfirmacaoCarga(paletes, caminhao){
-  if(!confirm(`Confirmar a retirada de ${paletes.length} palete(s) no caminhão ${caminhao}?\n\nIsso atualiza a planilha agora mesmo (via Apps Script). Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
+  if(!confirm(`Confirmar a retirada de ${paletes.length} palete(s) no caminhão ${caminhao}?\n\nIsso atualiza o banco agora mesmo. Só confirme depois que os paletes já tiverem saído fisicamente da câmara.`)) return;
 
   const btn = document.getElementById('btnConfirmarCarga');
   const textoOriginal = btn.textContent;
@@ -2532,38 +2544,66 @@ async function enviarConfirmacaoCarga(paletes, caminhao){
   btn.textContent = '⏳ Confirmando…';
 
   try{
-    const resp = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        token: APPS_SCRIPT_TOKEN,
-        caminhao,
-        paletes: paletes.map(p => ({
-          linha: p.linha,
-          rua: p.rua, lado: p.lado, andar: p.andar, posicao: p.posicao, palete: p.palete,
-          tipo: p.tipo, produtosRetirar: p.produtosRetirar, pacotesRetirar: p.pacotesRetirar,
-          produto: p.produtosRetirar.join(', '),
-        })),
-      }),
-    });
-    const resultado = await resp.json();
+    const ids = paletes.map(p => p.linha);
+    const { data: atuais, error: erroAtuais } = await sb.from('ocupacao').select('id, pacotes, produto').in('id', ids);
+    if(erroAtuais) throw erroAtuais;
+    const atualPorId = Object.fromEntries((atuais || []).map(r => [r.id, r]));
+    const agoraIso = new Date().toISOString();
 
-    if(!resultado.ok){
-      alert('Não deu pra confirmar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
-      return;
-    }
+    const resultados = await Promise.all(paletes.map(async (p) => {
+      const produtoLabel = (p.produtosRetirar && p.produtosRetirar.length) ? p.produtosRetirar.join(', ') : '';
+      const endereco = enderecoTexto(p.posicao, p.palete);
+      const atual = atualPorId[p.linha];
 
-    const falhas = resultado.resultados.filter(r => !r.ok);
+      if(!atual){
+        return { produto: produtoLabel, endereco, ok: false };
+      }
+
+      let patch = { caminhao: caminhao || null };
+
+      if(p.tipo === 'parcial'){
+        const produtosAtuais = String(atual.produto || '').split(',').map(s => s.trim()).filter(Boolean);
+        const remover = (p.produtosRetirar || []).map(s => s.trim());
+        const restantes = produtosAtuais.filter(prod => !remover.includes(prod));
+        if(restantes.length === 0){
+          patch.data_saida = agoraIso;
+        } else {
+          patch.produto = restantes.join(', ');
+        }
+      } else if(p.tipo === 'pacotes_parcial'){
+        const pacotesAtuais = parseInt(atual.pacotes, 10);
+        const pacotesRetirar = parseInt(p.pacotesRetirar, 10);
+        if(!pacotesAtuais || !pacotesRetirar || pacotesRetirar <= 0){
+          return { produto: produtoLabel, endereco, ok: false };
+        }
+        const restam = pacotesAtuais - pacotesRetirar;
+        if(restam <= 0){
+          patch.pacotes = 0;
+          patch.data_saida = agoraIso;
+        } else {
+          patch.pacotes = restam;
+        }
+      } else {
+        patch.data_saida = agoraIso;
+      }
+
+      const { error } = await sb.from('ocupacao').update(patch).eq('id', p.linha);
+      if(error){ console.error('Erro ao atualizar palete', p.linha, error); return { produto: produtoLabel, endereco, ok: false }; }
+      return { produto: produtoLabel, endereco, ok: true };
+    }));
+
+    const falhas = resultados.filter(r => !r.ok);
     if(falhas.length){
-      alert(`${resultado.resultados.length - falhas.length} de ${resultado.resultados.length} paletes processados.\n\n${falhas.length} não foram encontrados na planilha (confira manualmente):\n\n` +
+      alert(`${resultados.length - falhas.length} de ${resultados.length} paletes processados.\n\n${falhas.length} não foram encontrados/atualizados (confira manualmente):\n\n` +
         falhas.map(f => `• ${f.endereco} (${f.produto})`).join('\n'));
     } else {
-      alert(`✅ ${resultado.resultados.length} palete(s) processados! A planilha já foi atualizada.`);
+      alert(`✅ ${resultados.length} palete(s) processados! O banco já foi atualizado.`);
     }
 
-    // guarda um retrato exato do que foi confirmado — depois que a
-    // planilha for resincronizada (carregarDados, logo abaixo) o estoque
-    // já vai estar diferente, então recalcular do zero não serviria mais
-    // pra reimprimir o mesmo romaneio
+    // guarda um retrato exato do que foi confirmado — depois que o banco
+    // for resincronizado (carregarDados, logo abaixo) o estoque já vai
+    // estar diferente, então recalcular do zero não serviria mais pra
+    // reimprimir o mesmo romaneio
     ULTIMA_CARGA_CONFIRMADA = construirEstruturaPdf();
     ULTIMA_CARGA_CONFIRMADA_CAMINHAO = caminhao;
     document.getElementById('btnReimprimirPdf').style.display = '';
@@ -2575,10 +2615,10 @@ async function enviarConfirmacaoCarga(paletes, caminhao){
     const resultadoEl = document.getElementById('resultadoBuscaCodigo');
     if(resultadoEl) resultadoEl.innerHTML = '';
     renderCargaTudo();
-    await carregarDados(); // resincroniza o mapa com a planilha já atualizada
+    await carregarDados(); // resincroniza o mapa com o banco já atualizado
   } catch(err){
     console.error('Erro ao confirmar carga:', err);
-    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet e se a URL configurada está correta.\n\n' + err.message);
+    alert('Erro ao falar com o banco. Confira sua conexão com a internet.\n\n' + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = textoOriginal;
@@ -2641,7 +2681,10 @@ function sugerirVagasParaEntrada(familia, quantidade){
 
   const ruasAtivas = new Set();
   OCUPACAO_REGISTROS.forEach(r => {
-    if(r.ocupado && r.familia === familia) ruasAtivas.add(`${r.rua}-${r.lado}`);
+    if(r.ocupado && r.familia === familia){
+      const info = infoPosicao(r.posicao);
+      if(info) ruasAtivas.add(`${info.rua}-${info.longarina}`);
+    }
   });
 
   const vagas = [];
@@ -2651,7 +2694,7 @@ function sugerirVagasParaEntrada(familia, quantidade){
 
       // 1) continua numa rua onde a família já está, priorizando a mais cheia (consolidar)
       const candidatas = [...ruasAtivas]
-        .map(k => { const [rua, lado] = k.split('-'); return statusRuaLado(Number(rua), lado); })
+        .map(k => { const [rua, longarina] = k.split('-'); return statusRuaLado(Number(rua), longarina); })
         .filter(s => s.andarAlvo !== null)
         .sort((a, b) => a.livresTotal - b.livresTotal);
       if(candidatas.length) alvo = candidatas[0];
@@ -2663,7 +2706,7 @@ function sugerirVagasParaEntrada(familia, quantidade){
       // físico em algum lugar da câmara
       if(!alvo){
         const todas = [];
-        RUAS.forEach(rua => rua.lados.forEach(lado => todas.push(statusRuaLado(rua.numero, lado))));
+        ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => todas.push(statusRuaLado(rua, longarina))));
         const comVaga = todas.filter(s => s.andarAlvo !== null);
         const virgem = comVaga.find(s => !s.temAlgumaFamilia);
         alvo = virgem || comVaga.sort((a, b) => b.livresTotal - a.livresTotal)[0] || null;
@@ -2671,9 +2714,9 @@ function sugerirVagasParaEntrada(familia, quantidade){
 
       if(!alvo) break; // não sobrou vaga em lugar nenhum pra essa família
 
-      vagas.push({ rua: alvo.rua, lado: alvo.lado, andar: alvo.andarAlvo, posicao: alvo.vaga.posicao, palete: alvo.vaga.palete });
+      vagas.push({ posicao: alvo.vaga.posicao, palete: alvo.vaga.palete });
       ruasAtivas.add(`${alvo.rua}-${alvo.lado}`);
-      OCUPACAO_MAP[cellCode(alvo.rua, alvo.lado, alvo.andar, alvo.vaga.posicao, alvo.vaga.palete)] = { familia };
+      OCUPACAO_MAP[cellCode(alvo.vaga.posicao, alvo.vaga.palete)] = { familia };
     }
   } finally {
     OCUPACAO_MAP = mapaReal; // sempre restaura o mapa real, mesmo se algo der errado acima
@@ -2806,9 +2849,8 @@ function renderVagaMistoPreview(){
     btn.style.display = 'none';
     return;
   }
-  const ladoTxt = VAGA_MISTO.lado === 'U' ? '' : ` Lado ${VAGA_MISTO.lado}`;
-  elPrev.innerHTML = `<div class="entrada-vagas-lista"><div class="entrada-vaga-row">Rua ${VAGA_MISTO.rua}${ladoTxt} · Andar ${VAGA_MISTO.andar} · Pos.${String(VAGA_MISTO.posicao).padStart(2,'0')}-P${VAGA_MISTO.palete}</div></div>`;
-  elCodigo.innerHTML = `<div class="carga-dica" style="margin-top:8px;">Código do palete (se confirmar agora): <strong style="color:var(--frost);font-family:var(--font-mono);">${formatarDataHoraLocal()}</strong> <span style="opacity:.65;">— pode variar 1 minuto até o clique em confirmar; quem grava o valor final é o Apps Script.</span></div>`;
+  elPrev.innerHTML = `<div class="entrada-vagas-lista"><div class="entrada-vaga-row">${enderecoTexto(VAGA_MISTO.posicao, VAGA_MISTO.palete)}</div></div>`;
+  elCodigo.innerHTML = `<div class="carga-dica" style="margin-top:8px;">Código do palete (se confirmar agora): <strong style="color:var(--frost);font-family:var(--font-mono);">${formatarDataHoraLocal()}</strong> <span style="opacity:.65;">— pode variar 1 minuto até o clique em confirmar.</span></div>`;
   btn.style.display = '';
 }
 
@@ -2848,7 +2890,7 @@ function calcularEntradasDeHoje(){
     if(!porPalete[key]){
       porPalete[key] = {
         codigo: r.codigoPalete, linha: r.linha, familia: r.familia,
-        rua: r.rua, lado: r.lado, andar: r.andar, posicao: r.posicao, palete: r.palete,
+        posicao: r.posicao, palete: r.palete,
         produtos: [],
       };
     }
@@ -2918,7 +2960,7 @@ function calcularSaidasDeHoje(){
     if(!porPalete[key]){
       porPalete[key] = {
         codigo: r.codigoPalete, linha: r.linha, familia: r.familia,
-        rua: r.rua, lado: r.lado, andar: r.andar, posicao: r.posicao, palete: r.palete,
+        posicao: r.posicao, palete: r.palete,
         dataSaidaDt: dt, caminhao: r.caminhao, produtos: [],
       };
     }
@@ -2965,13 +3007,7 @@ async function confirmarEntradaMisto(){
   const semDataProducao = ITENS_PALETE_MISTO.find(i => !i.dataProducao);
   if(semDataProducao){ alert(`Escolha a data de produção de "${semDataProducao.produto}" antes de confirmar.`); return; }
 
-  const dataBR = dataHojeBR(); // Data de Entrada é sempre hoje
-
-  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
-    alert('A gravação automática ainda não foi configurada (falta a URL do Apps Script).');
-    return;
-  }
-  if(!confirm(`Confirmar a entrada desse palete misto com ${ITENS_PALETE_MISTO.length} produto(s)?\n\nIsso vai criar ${ITENS_PALETE_MISTO.length} linha(s) nova(s) na planilha, todas com o mesmo código de rastreio.`)) return;
+  if(!confirm(`Confirmar a entrada desse palete misto com ${ITENS_PALETE_MISTO.length} produto(s)?\n\nIsso vai criar ${ITENS_PALETE_MISTO.length} registro(s) novo(s) no banco, todos com o mesmo código de rastreio.`)) return;
 
   const btn = document.getElementById('btnConfirmarEntradaMisto');
   const textoOriginal = btn.textContent;
@@ -2979,29 +3015,26 @@ async function confirmarEntradaMisto(){
   btn.textContent = '⏳ Registrando…';
 
   try{
-    const resp = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        token: APPS_SCRIPT_TOKEN,
-        acao: 'entrada',
-        entradas: ITENS_PALETE_MISTO.map(item => ({
-          familia: item.familia, produto: item.produto, codigo: item.codigo, pacotes: item.pacotes,
-          rua: VAGA_MISTO.rua, lado: VAGA_MISTO.lado, andar: VAGA_MISTO.andar, posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
-          dataProducao: item.dataProducao.split('-').reverse().join('/'), dataEntrada: dataBR,
-          grupoPalete: 0, // todos os produtos são o MESMO palete físico — mesmo código de rastreio
-        })),
-      }),
-    });
-    const resultado = await resp.json();
+    const codigo = gerarCodigoUnico(codigosJaUsados()); // todos os produtos são o MESMO palete físico — mesmo código de rastreio
+    const agoraIso = new Date().toISOString();
+    const linhasNovas = ITENS_PALETE_MISTO.map(item => ({
+      codigo_rastreio: codigo,
+      familia: item.familia, produto: item.produto, pacotes: item.pacotes,
+      posicao: VAGA_MISTO.posicao, palete: VAGA_MISTO.palete,
+      data_producao: item.dataProducao, // já vem "aaaa-mm-dd" do input
+      data_entrada: agoraIso,
+    }));
 
-    if(!resultado.ok){
-      alert('Não deu pra registrar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
+    const { error } = await sb.from('ocupacao').insert(linhasNovas);
+    if(error){
+      alert('Não deu pra registrar: ' + error.message);
       return;
     }
+    for(const item of ITENS_PALETE_MISTO){
+      await registrarFamiliaSeNova(item.familia, item.produto, item.codigo);
+    }
 
-    let msg = `✅ Palete misto registrado! ${resultado.linhas} linha(s) na planilha, código ${resultado.codigos ? resultado.codigos.join(', ') : ''}.`;
-    if(resultado.avisoFamilias) msg += `\n\n⚠ ${resultado.avisoFamilias}`;
-    alert(msg);
+    alert(`✅ Palete misto registrado! ${linhasNovas.length} produto(s), código ${codigo}.`);
     ITENS_PALETE_MISTO = [];
     VAGA_MISTO = null;
     renderItensPaleteMisto();
@@ -3009,7 +3042,7 @@ async function confirmarEntradaMisto(){
     await carregarDados();
   } catch(err){
     console.error('Erro ao confirmar entrada de palete misto:', err);
-    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet.\n\n' + err.message);
+    alert('Erro ao falar com o banco. Confira sua conexão com a internet.\n\n' + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = textoOriginal;
@@ -3098,10 +3131,7 @@ function renderVagasPreview(){
   const faltaram = ENTRADA_QTD - ENTRADA_VAGAS.length;
   el.innerHTML = `
     <div class="entrada-vagas-lista">
-      ${ENTRADA_VAGAS.map((v, i) => {
-        const ladoTxt = v.lado === 'U' ? '' : ` Lado ${v.lado}`;
-        return `<div class="entrada-vaga-row">${i + 1}. Rua ${v.rua}${ladoTxt} · Andar ${v.andar} · Pos.${String(v.posicao).padStart(2, '0')}-P${v.palete}</div>`;
-      }).join('')}
+      ${ENTRADA_VAGAS.map((v, i) => `<div class="entrada-vaga-row">${i + 1}. ${enderecoTexto(v.posicao, v.palete)}</div>`).join('')}
     </div>
     ${faltaram > 0 ? `<div class="carga-aviso" style="margin-top:10px;">⚠ Só sobrou vaga pra ${ENTRADA_VAGAS.length} de ${ENTRADA_QTD} paletes — a câmara está sem espaço pra essa família em qualquer rua.</div>` : ''}
   `;
@@ -3111,6 +3141,34 @@ function renderVagasPreview(){
 /* Manda o lote de entradas pro Apps Script, que grava as linhas novas
    direto na planilha (FAMÍLIA, PRODUTO, RUA, LADO, ANDAR, POSIÇÃO,
    PALETE, DATA ENTRADA) — sem precisar digitar endereço na mão. */
+/* Códigos de rastreio já em uso — pra gerar um novo sem bater com um que
+   já existe (mesma ideia que o Code.gs fazia no servidor; agora é feita
+   aqui no navegador, checando contra o que já foi carregado + o que já
+   foi gerado nesta mesma leva). */
+function codigosJaUsados(){
+  return new Set(OCUPACAO_REGISTROS.map(r => r.codigoPalete).filter(Boolean));
+}
+function gerarCodigoUnico(usados){
+  const base = formatarDataHoraLocal();
+  let candidato = base, sufixo = 1;
+  while(usados.has(candidato)){
+    sufixo++;
+    candidato = `${base}-${sufixo}`;
+  }
+  usados.add(candidato);
+  return candidato;
+}
+
+/* Se a família ainda não tem esse produto cadastrado na tabela
+   "familias", registra — sem isso, a tabela de referência fica
+   desatualizada toda vez que um produto novo entra pela primeira vez. */
+async function registrarFamiliaSeNova(familia, produto, codigo){
+  const jaExiste = FAMILIAS_CATALOGO.some(f => f.PRODUTO === produto);
+  if(jaExiste || !produto) return;
+  const { error } = await sb.from('familias').insert([{ familia, codigo_produto: codigo || null, produto, rua: null }]);
+  if(error) console.error('Não deu pra registrar a família nova:', error);
+}
+
 async function confirmarEntrada(){
   if(ENTRADA_VAGAS.length === 0) return;
   const familia = familiaEntradaEscolhida();
@@ -3118,16 +3176,10 @@ async function confirmarEntrada(){
   const pacotesInput = document.getElementById('entradaPacotes').value;
   const pacotes = pacotesInput ? parseInt(pacotesInput, 10) : null;
   if(!pacotes || pacotes <= 0){ alert('Informe quantos pacotes tem cada palete antes de confirmar.'); return; }
-  const dataProducaoInput = document.getElementById('entradaDataProducao').value;
-  if(!dataProducaoInput){ alert('Escolha a data de produção do item.'); return; }
-  const dataProducaoBR = dataProducaoInput.split('-').reverse().join('/'); // yyyy-mm-dd -> dd/mm/yyyy
-  const dataBR = dataHojeBR(); // Data de Entrada é sempre hoje
+  const dataProducaoIso = document.getElementById('entradaDataProducao').value; // já vem "aaaa-mm-dd"
+  if(!dataProducaoIso){ alert('Escolha a data de produção do item.'); return; }
 
-  if(!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes('COLOQUE_AQUI')){
-    alert('A gravação automática ainda não foi configurada (falta a URL do Apps Script).');
-    return;
-  }
-  if(!confirm(`Confirmar a entrada de ${ENTRADA_VAGAS.length} palete(s) de "${ENTRADA_PRODUTO}"?\n\nIsso vai criar ${ENTRADA_VAGAS.length} linha(s) nova(s) na planilha.`)) return;
+  if(!confirm(`Confirmar a entrada de ${ENTRADA_VAGAS.length} palete(s) de "${ENTRADA_PRODUTO}"?\n\nIsso vai criar ${ENTRADA_VAGAS.length} registro(s) novo(s) no banco.`)) return;
 
   const btn = document.getElementById('btnConfirmarEntrada');
   const textoOriginal = btn.textContent;
@@ -3135,39 +3187,33 @@ async function confirmarEntrada(){
   btn.textContent = '⏳ Registrando…';
 
   try{
-    const resp = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({
-        token: APPS_SCRIPT_TOKEN,
-        acao: 'entrada',
-        entradas: ENTRADA_VAGAS.map((v, i) => ({
-          familia, produto: ENTRADA_PRODUTO, codigo: ENTRADA_PRODUTO_CODIGO, pacotes,
-          rua: v.rua, lado: v.lado, andar: v.andar, posicao: v.posicao, palete: v.palete,
-          dataProducao: dataProducaoBR, dataEntrada: dataBR,
-          grupoPalete: i, // cada vaga aqui é um palete físico diferente — código próprio pra cada uma
-        })),
-      }),
-    });
-    const resultado = await resp.json();
+    const usados = codigosJaUsados();
+    const agoraIso = new Date().toISOString();
+    const linhasNovas = ENTRADA_VAGAS.map(v => ({
+      codigo_rastreio: gerarCodigoUnico(usados), // cada vaga é um palete físico diferente — código próprio pra cada uma
+      familia, produto: ENTRADA_PRODUTO, pacotes,
+      posicao: v.posicao, palete: v.palete,
+      data_producao: dataProducaoIso, data_entrada: agoraIso,
+    }));
 
-    if(!resultado.ok){
-      alert('Não deu pra registrar: ' + (resultado.erro || 'erro desconhecido no Apps Script.'));
+    const { error } = await sb.from('ocupacao').insert(linhasNovas);
+    if(error){
+      alert('Não deu pra registrar: ' + error.message);
       return;
     }
+    await registrarFamiliaSeNova(familia, ENTRADA_PRODUTO, ENTRADA_PRODUTO_CODIGO);
 
-    let msg = `✅ ${resultado.linhas} palete(s) registrados na planilha!`;
-    if(resultado.avisoFamilias) msg += `\n\n⚠ ${resultado.avisoFamilias}`;
-    alert(msg);
+    alert(`✅ ${linhasNovas.length} palete(s) registrados!`);
     ENTRADA_PRODUTO = null;
     ENTRADA_QTD = 1;
     ENTRADA_VAGAS = [];
     document.getElementById('entradaPacotes').value = '';
     document.getElementById('entradaCampos').style.display = 'none';
     document.getElementById('entradaSelecionado').textContent = 'Escolha um produto na lista ao lado.';
-    await carregarDados(); // resincroniza o mapa com a planilha já atualizada
+    await carregarDados(); // resincroniza o mapa com o banco já atualizado
   } catch(err){
     console.error('Erro ao confirmar entrada:', err);
-    alert('Erro ao falar com o Apps Script. Confira sua conexão com a internet.\n\n' + err.message);
+    alert('Erro ao falar com o banco. Confira sua conexão com a internet.\n\n' + err.message);
   } finally {
     btn.disabled = false;
     btn.textContent = textoOriginal;
@@ -3359,7 +3405,7 @@ function renderAll(){
         <span class="nav-andar-atual">Mapa — Andar ${andarMapaCamara}</span>
         <button id="btnAndarMapaProximo" class="btn-nav-andar" ${temProximo ? '' : 'disabled'}>Próximo andar ▶</button>
       </div>
-      ${RUAS.map(rua => renderRua(rua, andarMapaCamara)).join('')}
+      ${ruasExistentes().map(rua => renderRua(rua, andarMapaCamara)).join('')}
     `;
     const btnAnterior = document.getElementById('btnAndarMapaAnterior');
     const btnProximo = document.getElementById('btnAndarMapaProximo');
@@ -3372,7 +3418,7 @@ function renderAll(){
       if(i < ANDARES.length - 1){ andarMapaCamara = ANDARES[i + 1]; renderAll(); }
     });
   } else {
-    document.getElementById('ruasWrap').innerHTML = RUAS.map(rua => renderRua(rua, andarAtual)).join('');
+    document.getElementById('ruasWrap').innerHTML = ruasExistentes().map(rua => renderRua(rua, andarAtual)).join('');
   }
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
