@@ -109,6 +109,31 @@
 
   .rack-scroll{ overflow-x:auto; padding-bottom:6px; }
   .lado-label{ font-size:10px; color:var(--frost-dim); text-transform:uppercase; letter-spacing:1.5px; font-weight:700; margin:4px 0; }
+
+  /* Câmara 4 — planta em colunas lado a lado (fiel ao desenho físico) */
+  .camara4-planta{ display:flex; align-items:flex-start; gap:10px; overflow-x:auto; padding-bottom:8px; }
+  .c4-coluna{ display:flex; flex-direction:column; align-items:center; gap:8px; flex:0 0 auto; }
+  .c4-coluna + .c4-coluna{ margin-left:-2px; } /* Longarina 2 e 3 ficam costas-com-costas, sem corredor entre elas */
+  .c4-titulo{
+    font-size:10.5px; color:var(--frost-dim); text-transform:uppercase; letter-spacing:1.5px;
+    font-weight:700; writing-mode:horizontal-tb;
+  }
+  .c4-corredor{
+    flex:0 0 auto; align-self:stretch; min-height:180px; width:34px;
+    border-left:1px dashed var(--ice-line); border-right:1px dashed var(--ice-line);
+    display:flex; align-items:center; justify-content:center; position:relative;
+    margin:0 4px;
+  }
+  .c4-corredor span{
+    writing-mode:vertical-rl; font-size:10px; color:var(--frost-dim); letter-spacing:2px;
+    font-weight:700; font-family:var(--font-mono);
+  }
+  .c4-corredor-porta{ min-height:220px; }
+  .c4-porta{
+    position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+    font-size:9.5px; color:var(--extra); font-weight:800; white-space:nowrap;
+    letter-spacing:0.5px; font-family:var(--font-mono);
+  }
   .rua-mid-label{
     font-size:15px; color:var(--frost); text-transform:uppercase; letter-spacing:3px;
     text-align:center; padding:10px 0; font-weight:800; font-family:var(--font-mono);
@@ -1399,31 +1424,145 @@ function renderRua(ruaNumero, andar){
    Só existe 1 porta (entrada e saída juntas), do lado da Rua 01/Long 1. */
 function renderRuaCamara4(ruaNumero, andar){
   const longarinas = longarinasDaRua(ruaNumero); // ['1','2'] (Rua 01) ou ['3','4'] (Rua 02)
-  const rackPrimeira = rackDoAndar(andar, longarinas[0]);
-  const rackSegunda = rackDoAndar(andar, longarinas[1]);
-  const capacidade = rackPrimeira.cells.length + rackSegunda.cells.length;
+  // Física real: na Rua 01, a Longarina 1 fica encostada na porta (mais
+  // perto do corredor de armários móveis) e a Longarina 2 fica um passo
+  // mais longe. Pra a porta (desenhada sempre embaixo do painel) ficar
+  // ao lado da Longarina 1, ela precisa ser a última a ser desenhada.
+  const cimaLabel = ruaNumero === 1 ? longarinas[1] : longarinas[0];
+  const baixoLabel = ruaNumero === 1 ? longarinas[0] : longarinas[1];
+  const rackCima = rackDoAndar(andar, cimaLabel);
+  const rackBaixo = rackDoAndar(andar, baixoLabel);
+  const capacidade = rackCima.cells.length + rackBaixo.cells.length;
   const paletesNesteAndar = capacidade * 2;
   const portaLabel = ruaNumero === 1 ? 'Entrada / Saída' : null;
-  const portaHtml = portaLabel ? doorWallHtml(portaLabel, 'bottom', rackPrimeira) : '';
+  const portaHtml = portaLabel ? doorWallHtml(portaLabel, 'bottom', rackBaixo) : '';
 
   const body = `
-    <div class="lado-label">Longarina ${longarinas[0]}</div>
-    <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[0], andar)}</div>
+    <div class="lado-label">Longarina ${cimaLabel}</div>
+    <div class="rack-scroll">${renderRackSvg(ruaNumero, cimaLabel, andar)}</div>
     <div class="rua-mid-label">Rua 0${ruaNumero}</div>
-    <div class="lado-label">Longarina ${longarinas[1]}</div>
-    <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[1], andar)}</div>
+    <div class="lado-label">Longarina ${baixoLabel}</div>
+    <div class="rack-scroll">${renderRackSvg(ruaNumero, baixoLabel, andar)}</div>
     ${portaHtml}
   `;
 
   return `
     <div class="rua-panel">
       <div class="rua-head">
-        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · 2 longarinas · sem espaços extras · Longarina ${longarinas[0]}: ${rackPrimeira.cells.length} espaços · Longarina ${longarinas[1]}: ${rackSegunda.cells.length} espaços</span>
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · 2 longarinas · sem espaços extras · Longarina ${cimaLabel}: ${rackCima.cells.length} espaços · Longarina ${baixoLabel}: ${rackBaixo.cells.length} espaços</span>
       </div>
       ${body}
     </div>
   `;
 }
+
+/* ===================== CÂMARA 4 — vista em planta baixa =====================
+   As outras câmaras mostram cada rua como uma faixa horizontal (uma
+   longarina embaixo da outra). A Câmara 4 tem uma planta física bem
+   diferente (2 corredores estreitos entre 4 racks lado a lado, Longarina
+   3 e 2 encostadas costas-com-costas no meio), então em vez de forçar
+   esse layout no mesmo molde das outras, ela ganha uma vista própria:
+   as 4 longarinas lado a lado como colunas, na mesma ordem física da
+   planta (Long 4 · corredor Rua 02 · Long 3 · Long 2 · corredor Rua 01 ·
+   Long 1), com os espaços empilhados de cima pra baixo dentro de cada
+   coluna — igual ao desenho que o Gio mandou. */
+function buildColunaCells(qtdEspacos, cellW = 92, cellH = 34){
+  const gap = 3;
+  const cells = [];
+  let y = 0;
+  for(let i=1; i<=qtdEspacos; i++){
+    cells.push({ y, w: cellW, h: cellH, posLocal: i, segmento: 'unico' });
+    y += cellH + gap;
+  }
+  return { cells, totalHeight: y - gap, cellW };
+}
+const RACKS_CAMARA4_COLUNA = {
+  '1': buildColunaCells(6),
+  '2': buildColunaCells(6),
+  '3': buildColunaCells(6),
+  '4': buildColunaCells(7),
+};
+
+/* Mesma lógica de cor/ocupação/tooltip do renderRackSvg, só que desenhada
+   em coluna (espaços empilhados na vertical) em vez de em linha. */
+function renderColunaSvg(rua, longarina, andar){
+  const rack = RACKS_CAMARA4_COLUNA[longarina];
+  const posicoes = posicoesDaFileira(rua, longarina, andar);
+  const cellW = rack.cellW;
+  const wLabel = 28; // espaço reservado do lado pro número da posição
+  const wTotal = cellW + wLabel;
+  let rects = '';
+  let labels = '';
+  rack.cells.forEach((c, idx)=>{
+    const p = posicoes[idx];
+    if(!p) return;
+    const numero = p.posicao;
+    const codeOuter = cellCode(numero);
+    const fill = 'var(--bg-soft)', stroke = 'var(--frost-dim)';
+    const codeP1 = cellCode(numero, 1);
+    const codeP2 = cellCode(numero, 2);
+    const ocupP1 = OCUPACAO_MAP[codeP1];
+    const ocupP2 = OCUPACAO_MAP[codeP2];
+    const fillP1 = ocupP1 ? familyColor(ocupP1.familia) : fill;
+    const fillP2 = ocupP2 ? familyColor(ocupP2.familia) : fill;
+    const conflitoP1 = OCUPACAO_CONFLITOS_SET.has(codeP1);
+    const conflitoP2 = OCUPACAO_CONFLITOS_SET.has(codeP2);
+    const dataP1 = ocupP1 ? `Posição ${numero}-P1 · ${escapeHtml(ocupP1.familia || 'sem família')}${ocupP1.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP1.produtos)) : ''}${ocupP1.dataProducao ? ' · produzido ' + escapeHtml(ocupP1.dataProducao) : ''} · desde ${escapeHtml(ocupP1.dataEntrada || '?')}${conflitoP1 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : `Posição ${numero}-P1`;
+    const dataP2 = ocupP2 ? `Posição ${numero}-P2 · ${escapeHtml(ocupP2.familia || 'sem família')}${ocupP2.produtos.length ? ' · ' + escapeHtml(produtosTexto(ocupP2.produtos)) : ''}${ocupP2.dataProducao ? ' · produzido ' + escapeHtml(ocupP2.dataProducao) : ''} · desde ${escapeHtml(ocupP2.dataEntrada || '?')}${conflitoP2 ? ' · ⚠ CONFLITO, confira fisicamente' : ''}` : `Posição ${numero}-P2`;
+    const halfW = (cellW - 2) / 2;
+
+    const buscaAtiva = !!FILTRO_PRODUTO || !!FILTRO_FAMILIA_MAPA;
+    const matchP1 = ocupP1 && produtoCombina(ocupP1.produtos) && (!FILTRO_FAMILIA_MAPA || ocupP1.familia === FILTRO_FAMILIA_MAPA);
+    const matchP2 = ocupP2 && produtoCombina(ocupP2.produtos) && (!FILTRO_FAMILIA_MAPA || ocupP2.familia === FILTRO_FAMILIA_MAPA);
+    const strokeP1 = conflitoP1 ? 'var(--red)' : (buscaAtiva && matchP1 ? 'var(--highlight)' : stroke);
+    const strokeP2 = conflitoP2 ? 'var(--red)' : (buscaAtiva && matchP2 ? 'var(--highlight)' : stroke);
+    const swP1 = conflitoP1 ? '2' : (buscaAtiva && matchP1 ? '2.2' : '0.6');
+    const swP2 = conflitoP2 ? '2' : (buscaAtiva && matchP2 ? '2.2' : '0.6');
+    const opP1 = buscaAtiva ? (matchP1 ? '1' : '0.12') : '1';
+    const opP2 = buscaAtiva ? (matchP2 ? '0.72' : '0.12') : '0.72';
+
+    labels += `<text x="${cellW + 8}" y="${c.y + c.h/2 + 3}" font-size="9.5" fill="var(--text-soft)" text-anchor="start" font-family="var(--font-mono)">${numero}</text>`;
+    rects += `<rect x="0" y="${c.y}" width="${cellW}" height="${c.h}" rx="2.5" fill="none" stroke="${stroke}" stroke-width="1.4" data-code="${codeOuter}"></rect>`;
+    rects += `<rect x="1.5" y="${c.y+1.5}" width="${halfW-1.5}" height="${c.h-3}" rx="1.5" fill="${fillP1}" stroke="${strokeP1}" stroke-width="${swP1}" opacity="${opP1}" class="rack-cell${conflitoP1 ? ' conflito-pulse' : ''}" data-code="${dataP1}" style="cursor:pointer;"></rect>`;
+    rects += `<rect x="${halfW+1.5}" y="${c.y+1.5}" width="${halfW-1.5}" height="${c.h-3}" rx="1.5" fill="${fillP2}" stroke="${strokeP2}" stroke-width="${swP2}" opacity="${opP2}" class="rack-cell${conflitoP2 ? ' conflito-pulse' : ''}" data-code="${dataP2}" style="cursor:pointer;"></rect>`;
+  });
+  return `<svg width="${wTotal}" height="${rack.totalHeight}" viewBox="0 0 ${wTotal} ${rack.totalHeight}" style="display:block;">${rects}${labels}</svg>`;
+}
+
+function renderCamara4Planta(andar){
+  const colunaHtml = (rua, longarina, titulo) => `
+    <div class="c4-coluna">
+      <div class="c4-titulo">${titulo}</div>
+      ${renderColunaSvg(rua, longarina, andar)}
+    </div>
+  `;
+  const capacidade = ['1','2','3','4'].reduce((sum, l) => sum + RACKS_CAMARA4_COLUNA[l].cells.length, 0);
+  const paletesNesteAndar = capacidade * 2;
+  return `
+    <div class="rua-panel">
+      <div class="rua-head">
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · 4 longarinas · Longarina 4: ${RACKS_CAMARA4_COLUNA['4'].cells.length} espaços · demais: ${RACKS_CAMARA4_COLUNA['1'].cells.length} espaços cada</span>
+      </div>
+      <div class="camara4-planta">
+        ${colunaHtml(2, '4', 'LONG 4')}
+        <div class="c4-corredor"><span>RUA 02</span></div>
+        ${colunaHtml(2, '3', 'LONG 3')}
+        ${colunaHtml(1, '2', 'LONG 2')}
+        <div class="c4-corredor c4-corredor-porta"><span>RUA 01</span><div class="c4-porta">Entrada / Saída</div></div>
+        ${colunaHtml(1, '1', 'LONG 1')}
+      </div>
+    </div>
+  `;
+}
+
+/* Escolhe qual layout usar pra montar o mapa de um andar — a Câmara 4
+   usa a planta em colunas lado a lado; as outras usam as faixas
+   horizontais por rua (padrão já existente). */
+function renderMapaAndar(andar){
+  if(CAMARA_ATUAL === 4) return renderCamara4Planta(andar);
+  return ruasExistentes().slice().reverse().map(rua => renderRua(rua, andar)).join('');
+}
+
 
 function posicoesPorAndar(andar){
   let total = 0;
@@ -3570,7 +3709,7 @@ function renderAll(){
         <span class="nav-andar-atual">Mapa — Andar ${andarMapaCamara}</span>
         <button id="btnAndarMapaProximo" class="btn-nav-andar" ${temProximo ? '' : 'disabled'}>Próximo andar ▶</button>
       </div>
-      ${ruasExistentes().slice().reverse().map(rua => renderRua(rua, andarMapaCamara)).join('')}
+      ${renderMapaAndar(andarMapaCamara)}
     `;
     const btnAnterior = document.getElementById('btnAndarMapaAnterior');
     const btnProximo = document.getElementById('btnAndarMapaProximo');
@@ -3583,7 +3722,7 @@ function renderAll(){
       if(i < andaresAtuais().length - 1){ andarMapaCamara = andaresAtuais()[i + 1]; renderAll(); }
     });
   } else {
-    document.getElementById('ruasWrap').innerHTML = ruasExistentes().slice().reverse().map(rua => renderRua(rua, andarAtual)).join('');
+    document.getElementById('ruasWrap').innerHTML = renderMapaAndar(andarAtual);
   }
   attachTooltips();
   renderCargaTudo(); // mantém a lista de produtos/estoque da aba Montar Carga sempre em dia
