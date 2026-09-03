@@ -521,6 +521,7 @@
           <button class="camara-switch-btn active" data-camara="1">Câmara 1</button>
           <button class="camara-switch-btn" data-camara="2">Câmara 2</button>
           <button class="camara-switch-btn" data-camara="3">Câmara 3</button>
+          <button class="camara-switch-btn" data-camara="4">Câmara 4</button>
         </div>
       </div>
     </div>
@@ -799,9 +800,39 @@ function gerarMapaCamara(qtdEsquerda, qtdDireita){
 const CAMARA1_MAPA = gerarMapaCamara(10, 9);
 const CAMARA2_MAPA = gerarMapaCamara(3, 5);
 const CAMARA3_MAPA = gerarMapaCamara(3, 5);
-const MAPAS_POR_CAMARA = { 1: CAMARA1_MAPA, 2: CAMARA2_MAPA, 3: CAMARA3_MAPA };
 
-let CAMARA_ATUAL = 1; // 1, 2 ou 3 — qual câmara está sendo exibida/editada agora
+/* Câmara 4: estrutura diferente das outras — 2 ruas (01 e 02), 4
+   longarinas numeradas 1 a 4 (não A/B), 3 andares (não 4), sem segmento
+   esquerda/corredor/direita (fileira única de "espaços"), sem posições
+   extras, e todo espaço comporta 2 paletes (sem exceção de 1 palete).
+   Rua 01 fica entre Longarina 1 e Longarina 2; Rua 02 entre Longarina 3
+   e Longarina 4. Longarinas 1, 2 e 3 têm 6 espaços cada; a Longarina 4
+   tem 7. Só existe 1 porta (entrada e saída juntas), do lado da Rua 01/
+   Longarina 1 — por isso a numeração começa ali e segue em "cobra"
+   (Long 1 do andar 3 ao 1, Long 2 do 1 ao 3, Long 3 do 3 ao 1, Long 4 do
+   1 ao 3), igual ao padrão das outras câmaras. */
+function gerarMapaCamara4(){
+  const mapa = {};
+  let n = 0;
+  function montaLongarina(rua, longarina, qtdEspacos, ordemAndares){
+    ordemAndares.forEach(andar => {
+      for(let i=1; i<=qtdEspacos; i++){
+        n++;
+        mapa[n] = { posicao:n, rua, longarina, andar, segmento:'unico', posLocal:i, capacidade:2 };
+      }
+    });
+  }
+  montaLongarina(1, '1', 6, [3,2,1]);
+  montaLongarina(1, '2', 6, [1,2,3]);
+  montaLongarina(2, '3', 6, [3,2,1]);
+  montaLongarina(2, '4', 7, [1,2,3]);
+  return mapa;
+}
+const CAMARA4_MAPA = gerarMapaCamara4();
+
+const MAPAS_POR_CAMARA = { 1: CAMARA1_MAPA, 2: CAMARA2_MAPA, 3: CAMARA3_MAPA, 4: CAMARA4_MAPA };
+
+let CAMARA_ATUAL = 1; // 1, 2, 3 ou 4 — qual câmara está sendo exibida/editada agora
 
 function mapaAtual(){ return MAPAS_POR_CAMARA[CAMARA_ATUAL]; }
 function infoPosicao(numero){ return mapaAtual()[numero] || null; }
@@ -815,7 +846,8 @@ function enderecoTexto(posicao, palete){
   const paleteTxt = palete ? `-P${palete}` : '';
   if(!info) return `Câmara ${CAMARA_ATUAL} · Posição ${posicao}${paleteTxt}`;
   const longarinaTxt = info.longarina === 'única' ? '' : ` Longarina ${info.longarina}`;
-  return `Câmara ${CAMARA_ATUAL} · Rua ${info.rua}${longarinaTxt} · And.${info.andar} · Pos.${posicao}${paleteTxt}`;
+  const ruaTxt = CAMARA_ATUAL === 4 ? `0${info.rua}` : info.rua;
+  return `Câmara ${CAMARA_ATUAL} · Rua ${ruaTxt}${longarinaTxt} · And.${info.andar} · Pos.${posicao}${paleteTxt}`;
 }
 
 /* Lista as ruas e as longarinas de cada uma, na ordem certa de exibição —
@@ -830,7 +862,14 @@ function longarinasDaRua(rua){
   Object.values(mapaAtual()).forEach(p => { if(p.rua === rua) set.add(p.longarina); });
   return [...set].sort();
 }
-const ANDARES = [1,2,3,4];
+/* Quais andares existem na câmara atualmente selecionada — deriva do
+   mapa, igual ruasExistentes()/longarinasDaRua(). Câmaras 1/2/3 têm 4
+   andares; a Câmara 4 tem só 3. */
+function andaresAtuais(){
+  const set = new Set();
+  Object.values(mapaAtual()).forEach(p => set.add(p.andar));
+  return [...set].sort((a,b)=>a-b);
+}
 
 /* Todas as posições (números sequenciais) de uma fileira específica
    (rua+longarina+andar), já na ordem física de leitura (esquerda →
@@ -847,7 +886,7 @@ let andarMapaCamara = 4; // qual andar o mapa mostra quando a visão é "CÂMARA
 /* Lista de andares a considerar nos cálculos do painel: só o selecionado,
    ou todos quando o botão "CÂMARA" está ativo (andarAtual === null). */
 function andaresConsiderados(){
-  return andarAtual === null ? ANDARES : [andarAtual];
+  return andarAtual === null ? andaresAtuais() : [andarAtual];
 }
 
 /* Registros de ocupação filtrados pelo andar selecionado no painel tipo
@@ -1155,7 +1194,32 @@ const RACKS_POR_CAMARA = {
   2: { comExtra: buildRackCells(true, 3, 5, 57, 30), semExtra: buildRackCells(false, 3, 5, 57, 30) },
   3: { comExtra: buildRackCells(true, 3, 5, 57, 30), semExtra: buildRackCells(false, 3, 5, 57, 30) },
 };
-function rackDoAndar(andar){
+
+/* Câmara 4: estrutura totalmente diferente — sem segmento esquerda/
+   corredor/direita, é só uma fileira contínua de "espaços" (cada um com
+   2 paletes, sem exceção de 1 palete). Longarinas 1, 2 e 3 têm 6 espaços;
+   a Longarina 4 tem 7. Célula de 98px pra chegar numa largura natural
+   parecida com a das outras câmaras (evita o mesmo esticamento/distorção
+   que a Câmara 2/3 tinha). */
+function buildRackSimples(qtdEspacos, cellW = 98, cellH = 30){
+  const gap = 2;
+  const cells = [];
+  let x = 0;
+  for(let i=1; i<=qtdEspacos; i++){
+    cells.push({ x, w: cellW, h: cellH, posLocal: i, segmento: 'unico' });
+    x += cellW + gap;
+  }
+  return { cells, totalWidth: x - gap };
+}
+const RACKS_CAMARA4 = {
+  '1': buildRackSimples(6),
+  '2': buildRackSimples(6),
+  '3': buildRackSimples(6),
+  '4': buildRackSimples(7),
+};
+
+function rackDoAndar(andar, longarina){
+  if(CAMARA_ATUAL === 4) return RACKS_CAMARA4[longarina];
   const racks = RACKS_POR_CAMARA[CAMARA_ATUAL];
   return (andar === 3 || andar === 4) ? racks.comExtra : racks.semExtra;
 }
@@ -1170,7 +1234,7 @@ function cellCode(posicao, palete){
    vira 2 retângulos lado a lado (P1 à esquerda, P2 à direita); a 1ª
    posição de cada segmento (esquerda e direita) só comporta 1 palete. */
 function renderRackSvg(rua, longarina, andar){
-  const rack = rackDoAndar(andar);
+  const rack = rackDoAndar(andar, longarina);
   const posicoes = posicoesDaFileira(rua, longarina, andar); // mesma ordem dos cells
   const h = rack.cells[0].h;
   const hLabel = 12; // espaço reservado embaixo pro número da posição
@@ -1239,8 +1303,7 @@ function renderRackSvg(rua, longarina, andar){
    (ou do vão vazio, nos andares sem extra).
    side='top'    -> parede fica ACIMA do rack — usada na Rua 1.
    side='bottom' -> parede fica ABAIXO do rack — usada na Rua 4. */
-function doorWallHtml(portaLabel, side, andar){
-  const rack = rackDoAndar(andar);
+function doorWallHtml(portaLabel, side, rack){
   const corredorCells = rack.cells.filter(c => c.segmento === 'corredor');
   let centerX;
   if(corredorCells.length){
@@ -1249,8 +1312,12 @@ function doorWallHtml(portaLabel, side, andar){
   } else {
     const esqCells = rack.cells.filter(c => c.segmento === 'esquerda');
     const dirCells = rack.cells.filter(c => c.segmento === 'direita');
-    const lastEsq = esqCells[esqCells.length-1], firstDir = dirCells[0];
-    centerX = (lastEsq.x + lastEsq.w + firstDir.x) / 2;
+    if(esqCells.length && dirCells.length){
+      const lastEsq = esqCells[esqCells.length-1], firstDir = dirCells[0];
+      centerX = (lastEsq.x + lastEsq.w + firstDir.x) / 2;
+    } else {
+      centerX = rack.totalWidth / 2; // sem segmentação (Câmara 4) — centraliza no meio da fileira
+    }
   }
   const doorW = 40, wallColor = '#5C5049', h = 66;
   const isTop = side === 'top';
@@ -1270,6 +1337,7 @@ function doorWallHtml(portaLabel, side, andar){
 }
 
 function renderRua(ruaNumero, andar){
+  if(CAMARA_ATUAL === 4) return renderRuaCamara4(ruaNumero, andar);
   const longarinas = longarinasDaRua(ruaNumero); // ['A','B'] ou ['única']
   const isDouble = longarinas.length === 2;
   const rack = rackDoAndar(andar);
@@ -1281,7 +1349,7 @@ function renderRua(ruaNumero, andar){
   // a Saída (Rua 4) fica em cima do painel dela, pra continuarem nas
   // pontas opostas da página.
   const portaSide = ruaNumero === 1 ? 'bottom' : (ruaNumero === 4 ? 'top' : null);
-  const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide, andar) : '';
+  const portaHtml = portaLabel ? doorWallHtml(portaLabel, portaSide, rack) : '';
 
   let body = '';
   if(isDouble){
@@ -1324,9 +1392,45 @@ function renderRua(ruaNumero, andar){
   `;
 }
 
+/* Câmara 4: 2 ruas (01 e 02), 4 longarinas (1, 2, 3, 4) — Rua 01 fica
+   entre Long 1 e Long 2, Rua 02 entre Long 3 e Long 4. Sem segmento
+   esquerda/corredor/direita (fileira única de "espaços"), sem posições
+   extras, e todo espaço comporta 2 paletes (sem exceção de 1 palete).
+   Só existe 1 porta (entrada e saída juntas), do lado da Rua 01/Long 1. */
+function renderRuaCamara4(ruaNumero, andar){
+  const longarinas = longarinasDaRua(ruaNumero); // ['1','2'] (Rua 01) ou ['3','4'] (Rua 02)
+  const rackPrimeira = rackDoAndar(andar, longarinas[0]);
+  const rackSegunda = rackDoAndar(andar, longarinas[1]);
+  const capacidade = rackPrimeira.cells.length + rackSegunda.cells.length;
+  const paletesNesteAndar = capacidade * 2;
+  const portaLabel = ruaNumero === 1 ? 'Entrada / Saída' : null;
+  const portaHtml = portaLabel ? doorWallHtml(portaLabel, 'bottom', rackPrimeira) : '';
+
+  const body = `
+    <div class="lado-label">Longarina ${longarinas[0]}</div>
+    <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[0], andar)}</div>
+    <div class="rua-mid-label">Rua 0${ruaNumero}</div>
+    <div class="lado-label">Longarina ${longarinas[1]}</div>
+    <div class="rack-scroll">${renderRackSvg(ruaNumero, longarinas[1], andar)}</div>
+    ${portaHtml}
+  `;
+
+  return `
+    <div class="rua-panel">
+      <div class="rua-head">
+        <span class="meta">${capacidade} posições (${paletesNesteAndar} paletes) neste andar · 2 longarinas · sem espaços extras · Longarina ${longarinas[0]}: ${rackPrimeira.cells.length} espaços · Longarina ${longarinas[1]}: ${rackSegunda.cells.length} espaços</span>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+
 function posicoesPorAndar(andar){
-  const rack = rackDoAndar(andar);
-  return ruasExistentes().reduce((sum, rua) => sum + longarinasDaRua(rua).length * rack.cells.length, 0);
+  let total = 0;
+  ruasExistentes().forEach(rua => {
+    longarinasDaRua(rua).forEach(longarina => { total += rackDoAndar(andar, longarina).cells.length; });
+  });
+  return total;
 }
 
 /* Conta quantos paletes (P1+P2) estão ocupados numa rua/longarina/andar específicos */
@@ -1340,8 +1444,9 @@ function paletesOcupados(rua, longarina, andar){
   return count;
 }
 
-function paletesTotaisNoAndar(andar){
-  const rack = rackDoAndar(andar);
+function paletesTotaisNoAndar(andar, longarina){
+  const rack = rackDoAndar(andar, longarina);
+  if(CAMARA_ATUAL === 4) return rack.cells.length * 2; // aqui todo espaço comporta 2 paletes, sem exceção
   let total = 0;
   rack.cells.forEach(c=>{
     total += (c.segmento === 'corredor') ? 2 : (c.posLocal === 1 ? 1 : 2);
@@ -1470,17 +1575,17 @@ function encontrarPrimeiraVagaLivre(rua, longarina, andar){
    quando uma família está espalhada em mais de uma. */
 function statusRuaLado(rua, longarina){
   let andarAlvo = null;
-  for(const andar of ANDARES){
-    if(paletesOcupados(rua, longarina, andar) < paletesTotaisNoAndar(andar)){ andarAlvo = andar; break; }
+  for(const andar of andaresAtuais()){
+    if(paletesOcupados(rua, longarina, andar) < paletesTotaisNoAndar(andar, longarina)){ andarAlvo = andar; break; }
   }
   let livresTotal = 0;
-  ANDARES.forEach(andar => livresTotal += paletesTotaisNoAndar(andar) - paletesOcupados(rua, longarina, andar));
+  andaresAtuais().forEach(andar => livresTotal += paletesTotaisNoAndar(andar, longarina) - paletesOcupados(rua, longarina, andar));
   const posicoesDestaLongarina = new Set(Object.values(mapaAtual()).filter(p => p.rua === rua && p.longarina === longarina).map(p => p.posicao));
   const temAlgumaFamilia = OCUPACAO_REGISTROS.some(r => r.ocupado && posicoesDestaLongarina.has(r.posicao));
   return {
     rua, lado: longarina, andarAlvo, livresTotal, temAlgumaFamilia,
     vaga: andarAlvo !== null ? encontrarPrimeiraVagaLivre(rua, longarina, andarAlvo) : null,
-    livresAndar: andarAlvo !== null ? (paletesTotaisNoAndar(andarAlvo) - paletesOcupados(rua, longarina, andarAlvo)) : 0,
+    livresAndar: andarAlvo !== null ? (paletesTotaisNoAndar(andarAlvo, longarina) - paletesOcupados(rua, longarina, andarAlvo)) : 0,
   };
 }
 
@@ -1520,7 +1625,7 @@ function calcularOcupacaoCamara(){
   ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => {
     andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua, longarina, andar);
-      capacidade += paletesTotaisNoAndar(andar);
+      capacidade += paletesTotaisNoAndar(andar, longarina);
     });
   }));
   const label = andarAtual === null ? 'Câmara fria — total geral' : `Câmara fria — Andar ${andarAtual}`;
@@ -1531,7 +1636,7 @@ function calcularOcupacaoPorRua(){
     let ocupados = 0, capacidade = 0;
     andaresConsiderados().forEach(andar => {
       ocupados += paletesOcupados(rua, longarina, andar);
-      capacidade += paletesTotaisNoAndar(andar);
+      capacidade += paletesTotaisNoAndar(andar, longarina);
     });
     const label = longarina === 'única' ? `Rua ${rua}` : `Rua ${rua} · Longarina ${longarina}`;
     return { label, ocupados, capacidade };
@@ -1539,9 +1644,11 @@ function calcularOcupacaoPorRua(){
 }
 function calcularOcupacaoPorAndar(){
   return andaresConsiderados().map(andar => {
-    let ocupados = 0;
-    ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => { ocupados += paletesOcupados(rua, longarina, andar); }));
-    const capacidade = ruasExistentes().reduce((sum, rua) => sum + longarinasDaRua(rua).length * paletesTotaisNoAndar(andar), 0);
+    let ocupados = 0, capacidade = 0;
+    ruasExistentes().forEach(rua => longarinasDaRua(rua).forEach(longarina => {
+      ocupados += paletesOcupados(rua, longarina, andar);
+      capacidade += paletesTotaisNoAndar(andar, longarina);
+    }));
     return { label: `Andar ${andar}`, ocupados, capacidade };
   });
 }
@@ -3405,7 +3512,7 @@ function trocarView(view){
 function renderFloorPanel(){
   const panel = document.getElementById('floorPanel');
   panel.querySelectorAll('.floor-btn').forEach(b=>b.remove());
-  ANDARES.slice().reverse().forEach(a=>{
+  andaresAtuais().slice().reverse().forEach(a=>{
     const btn = document.createElement('button');
     btn.className = 'floor-btn' + (a === andarAtual ? ' active' : '');
     btn.textContent = a;
@@ -3453,10 +3560,10 @@ function renderAll(){
     // "CÂMARA" selecionada: os números do topo continuam somando os 4
     // andares, mas o mapa mostra só 1 andar por vez (com botões de
     // navegação), em vez de empilhar os 4 — fica bem mais compacto.
-    if(!ANDARES.includes(andarMapaCamara)) andarMapaCamara = ANDARES[ANDARES.length - 1];
-    const idx = ANDARES.indexOf(andarMapaCamara);
+    if(!andaresAtuais().includes(andarMapaCamara)) andarMapaCamara = andaresAtuais()[andaresAtuais().length - 1];
+    const idx = andaresAtuais().indexOf(andarMapaCamara);
     const temAnterior = idx > 0;
-    const temProximo = idx < ANDARES.length - 1;
+    const temProximo = idx < andaresAtuais().length - 1;
     document.getElementById('ruasWrap').innerHTML = `
       <div class="nav-andar-mapa">
         <button id="btnAndarMapaAnterior" class="btn-nav-andar" ${temAnterior ? '' : 'disabled'}>◀ Andar anterior</button>
@@ -3468,12 +3575,12 @@ function renderAll(){
     const btnAnterior = document.getElementById('btnAndarMapaAnterior');
     const btnProximo = document.getElementById('btnAndarMapaProximo');
     if(btnAnterior) btnAnterior.addEventListener('click', ()=>{
-      const i = ANDARES.indexOf(andarMapaCamara);
-      if(i > 0){ andarMapaCamara = ANDARES[i - 1]; renderAll(); }
+      const i = andaresAtuais().indexOf(andarMapaCamara);
+      if(i > 0){ andarMapaCamara = andaresAtuais()[i - 1]; renderAll(); }
     });
     if(btnProximo) btnProximo.addEventListener('click', ()=>{
-      const i = ANDARES.indexOf(andarMapaCamara);
-      if(i < ANDARES.length - 1){ andarMapaCamara = ANDARES[i + 1]; renderAll(); }
+      const i = andaresAtuais().indexOf(andarMapaCamara);
+      if(i < andaresAtuais().length - 1){ andarMapaCamara = andaresAtuais()[i + 1]; renderAll(); }
     });
   } else {
     document.getElementById('ruasWrap').innerHTML = ruasExistentes().slice().reverse().map(rua => renderRua(rua, andarAtual)).join('');
@@ -3549,8 +3656,8 @@ document.getElementById('camaraSwitch').addEventListener('click', (e)=>{
   document.querySelectorAll('.camara-switch-btn').forEach(b=>{
     b.classList.toggle('active', Number(b.dataset.camara) === CAMARA_ATUAL);
   });
-  andarAtual = ANDARES[ANDARES.length - 1];
-  andarMapaCamara = ANDARES[ANDARES.length - 1];
+  andarAtual = andaresAtuais()[andaresAtuais().length - 1];
+  andarMapaCamara = andaresAtuais()[andaresAtuais().length - 1];
   FILTRO_PRODUTO = '';
   document.getElementById('buscaProduto').value = '';
   document.getElementById('btnLimparBusca').style.display = 'none';
